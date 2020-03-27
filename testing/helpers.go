@@ -13,6 +13,15 @@ import (
 
 var testDB models.DB
 
+// CreateClanNameRegularIndexInMongo creates the regular index for clan search in mongo
+func CreateClanNameRegularIndexInMongo(getTestMongo func() (interfaces.MongoDB, error), gameID string) error {
+	db, err := getTestMongo()
+	if err != nil {
+		return err
+	}
+	return db.Run(mongo.GetClanNameRegularIndexCommand(gameID, false), nil)
+}
+
 // GetTestDB returns a connection to the test database.
 func GetTestDB() (models.DB, error) {
 	if testDB != nil {
