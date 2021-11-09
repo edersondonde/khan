@@ -18,33 +18,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
 	"github.com/uber-go/zap"
 
 	"github.com/labstack/echo/engine/standard"
 	. "github.com/onsi/gomega"
-	"github.com/topfreegames/extensions/mongo/interfaces"
 	"github.com/topfreegames/khan/api"
 	"github.com/topfreegames/khan/es"
 	"github.com/topfreegames/khan/models"
-	"github.com/topfreegames/khan/mongo"
 	kt "github.com/topfreegames/khan/testing"
 )
 
-func GetTestES() *es.Client {
-	return es.GetTestClient("localhost", 9200, "", false, zap.New(zap.NewJSONEncoder(), zap.ErrorLevel), false)
-}
+var testES *es.Client
 
-func GetTestMongo() (interfaces.MongoDB, error) {
-	config := viper.New()
-	config.SetConfigType("yaml")
-	config.SetConfigFile("../config/test.yaml")
-	err := config.ReadInConfig()
-	if err != nil {
-		return nil, err
+func GetTestES() *es.Client {
+	if testES != nil {
+		return testES
 	}
-	l := kt.NewMockLogger()
-	return mongo.GetMongo(l, config)
+	testES = es.GetTestClient("localhost", 9200, "", false, zap.New(zap.NewJSONEncoder(), zap.ErrorLevel), false)
+	return testES
 }
 
 func DestroyTestES() {
@@ -67,16 +58,16 @@ func GetFaultyTestDB() models.DB {
 
 // GetDefaultTestApp returns a new Khan API Application bound to 0.0.0.0:8888 for test
 func GetDefaultTestApp() *api.App {
-	l := kt.NewMockLogger()
-	app := api.GetApp("0.0.0.0", 8888, "../config/test.yaml", true, l, false, true)
+	logger := kt.NewMockLogger()
+	app := api.GetApp("0.0.0.0", 8888, "../config/test.yaml", true, logger, false, true)
 	app.Configure()
 	return app
 }
 
 // GetTestAppWithBasicAuth returns a new Khan API application bound to 0.0.0.0:8888 for test with basic auth configs
 func GetTestAppWithBasicAuth(username, password string) *api.App {
-	l := kt.NewMockLogger()
-	app := api.GetApp("0.0.0.0", 8888, "../config/test.yaml", true, l, false, true)
+	logger := kt.NewMockLogger()
+	app := api.GetApp("0.0.0.0", 8888, "../config/test.yaml", true, logger, false, true)
 	app.Config.Set("basicauth.username", username)
 	app.Config.Set("basicauth.password", password)
 	app.Configure()

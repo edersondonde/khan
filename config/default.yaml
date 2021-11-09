@@ -35,13 +35,6 @@ webhooks:
   statsPort: 9999
   runStats: true
 
-sentry:
-  url: ""
-
-newrelic:
-  appName: "khan"
-  key: ""
-
 jaeger:
   disabled: true
   samplingProbability: 0.001

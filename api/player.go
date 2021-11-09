@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo"
+	"github.com/topfreegames/extensions/v9/gorp/interfaces"
 	"github.com/topfreegames/khan/log"
 	"github.com/topfreegames/khan/models"
 	"github.com/uber-go/zap"
@@ -25,45 +26,47 @@ func CreatePlayerHandler(app *App) func(c echo.Context) error {
 		start := time.Now()
 		gameID := c.Param("gameID")
 
-		db := app.Db(c.StdContext())
-
-		l := app.Logger.With(
+		logger := app.Logger.With(
 			zap.String("source", "playerHandler"),
 			zap.String("operation", "createPlayer"),
 			zap.String("gameID", gameID),
 		)
 
 		var payload CreatePlayerPayload
-		err := WithSegment("payload", c, func() error {
-			if err := LoadJSONPayload(&payload, c, l); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
+		if err := LoadJSONPayload(&payload, c, logger); err != nil {
 			return FailWith(http.StatusBadRequest, err.Error(), c)
 		}
 
-		var player *models.Player
-		err = WithSegment("player-create", c, func() error {
-			log.D(l, "Creating player...")
-			player, err = models.CreatePlayer(
-				db,
-				gameID,
-				payload.PublicID,
-				payload.Name,
-				payload.Metadata,
-				false,
-			)
+		var transaction interfaces.Transaction
+		transaction, err := app.BeginTrans(c.StdContext(), logger)
+		if err != nil {
+			return FailWith(http.StatusInternalServerError, err.Error(), c)
+		}
 
-			if err != nil {
-				log.E(l, "Player creation failed.", func(cm log.CM) {
-					cm.Write(zap.Error(err))
-				})
-				return err
+		log.D(logger, "Creating player...")
+		player, err := models.CreatePlayer(
+			transaction,
+			logger,
+			app.EncryptionKey,
+			gameID,
+			payload.PublicID,
+			payload.Name,
+			payload.Metadata,
+		)
+
+		if err != nil {
+			log.E(logger, "Player creation failed.", func(cm log.CM) {
+				cm.Write(zap.Error(err))
+			})
+
+			txErr := app.Rollback(transaction, "Player creation failed, rolling back", c, logger, err)
+			if txErr != nil {
+				return FailWith(http.StatusInternalServerError, fmt.Sprint(err.Error(), ", rolback error: ", txErr.Error()), c)
 			}
-			return nil
-		})
+			return FailWith(http.StatusInternalServerError, err.Error(), c)
+		}
+
+		err = app.Commit(transaction, "Player created successful", c, logger)
 		if err != nil {
 			return FailWith(http.StatusInternalServerError, err.Error(), c)
 		}
@@ -76,21 +79,19 @@ func CreatePlayerHandler(app *App) func(c echo.Context) error {
 			"metadata": player.Metadata,
 		}
 
-		err = WithSegment("hook-dispatch", c, func() error {
-			err = app.DispatchHooks(gameID, models.PlayerCreatedHook, player.Serialize())
-			if err != nil {
-				log.E(l, "Player creation hook dispatch failed.", func(cm log.CM) {
-					cm.Write(zap.Error(err))
-				})
-				return err
-			}
-			return nil
-		})
+		err = app.DispatchHooks(
+			gameID,
+			models.PlayerCreatedHook,
+			player.Serialize(app.EncryptionKey),
+		)
 		if err != nil {
+			log.E(logger, "Player creation hook dispatch failed.", func(cm log.CM) {
+				cm.Write(zap.Error(err))
+			})
 			return FailWith(http.StatusInternalServerError, err.Error(), c)
 		}
 
-		log.D(l, "Player created successfully.", func(cm log.CM) {
+		log.D(logger, "Player created successfully.", func(cm log.CM) {
 			cm.Write(zap.Duration("duration", time.Now().Sub(start)))
 		})
 
@@ -108,7 +109,7 @@ func UpdatePlayerHandler(app *App) func(c echo.Context) error {
 
 		db := app.Db(c.StdContext())
 
-		l := app.Logger.With(
+		logger := app.Logger.With(
 			zap.String("source", "playerHandler"),
 			zap.String("operation", "updatePlayer"),
 			zap.String("gameID", gameID),
@@ -116,9 +117,7 @@ func UpdatePlayerHandler(app *App) func(c echo.Context) error {
 		)
 
 		var payload UpdatePlayerPayload
-		err := WithSegment("payload", c, func() error {
-			return LoadJSONPayload(&payload, c, l)
-		})
+		err := LoadJSONPayload(&payload, c, logger)
 		if err != nil {
 			return FailWith(http.StatusBadRequest, err.Error(), c)
 		}
@@ -126,77 +125,72 @@ func UpdatePlayerHandler(app *App) func(c echo.Context) error {
 		var player, beforeUpdatePlayer *models.Player
 		var game *models.Game
 
-		err = WithSegment("game-retrieve", c, func() error {
-			log.D(l, "Retrieving game...")
-			game, err = models.GetGameByPublicID(db, gameID)
+		log.D(logger, "Retrieving game...")
+		game, err = models.GetGameByPublicID(db, gameID)
 
-			if err != nil {
-				return err
-			}
-			log.D(l, "Game retrieved successfully")
-			return nil
-		})
 		if err != nil {
 			return FailWith(http.StatusBadRequest, err.Error(), c)
 		}
+		log.D(logger, "Game retrieved successfully")
 
-		err = WithSegment("player-retrieve", c, func() error {
-			log.D(l, "Retrieving player...")
-			beforeUpdatePlayer, err = models.GetPlayerByPublicID(db, gameID, playerPublicID)
-			if err != nil && err.Error() != (&models.ModelNotFoundError{Type: "Player", ID: playerPublicID}).Error() {
-				return err
-			}
-			log.D(l, "Player retrieved successfully")
-			return nil
-		})
-		if err != nil {
+		log.D(logger, "Retrieving player...")
+		beforeUpdatePlayer, err = models.GetPlayerByPublicID(db, app.EncryptionKey, gameID, playerPublicID)
+		if err != nil && err.Error() != (&models.ModelNotFoundError{Type: "Player", ID: playerPublicID}).Error() {
 			return FailWith(http.StatusBadRequest, err.Error(), c)
 		}
+		log.D(logger, "Player retrieved successfully")
 
-		err = WithSegment("player-update", c, func() error {
-			err = WithSegment("player-update-query", c, func() error {
-				log.D(l, "Updating player...")
-				player, err = models.UpdatePlayer(
-					db,
-					gameID,
-					playerPublicID,
-					payload.Name,
-					payload.Metadata,
-				)
-				return err
+		var transaction interfaces.Transaction
+		transaction, err = app.BeginTrans(c.StdContext(), logger)
+		if err != nil {
+			return FailWith(http.StatusInternalServerError, err.Error(), c)
+		}
+
+		log.D(logger, "Updating player...")
+		player, err = models.UpdatePlayer(
+			transaction,
+			logger,
+			app.EncryptionKey,
+			gameID,
+			playerPublicID,
+			payload.Name,
+			payload.Metadata,
+		)
+
+		if err != nil {
+			log.E(logger, "Updating player failed.", func(cm log.CM) {
+				cm.Write(zap.Error(err))
 			})
 
+			txErr := app.Rollback(transaction, "Player update failed, rolling back", c, logger, err)
+			if txErr != nil {
+				return FailWith(http.StatusInternalServerError, fmt.Sprint(err.Error(), ", rolback error: ", txErr.Error()), c)
+			}
+			return FailWith(http.StatusInternalServerError, err.Error(), c)
+		}
+
+		err = app.Commit(transaction, "Player created successful", c, logger)
+		if err != nil {
+			return FailWith(http.StatusInternalServerError, err.Error(), c)
+		}
+
+		shouldDispatch := validateUpdatePlayerDispatch(game, beforeUpdatePlayer, player, payload.Metadata, logger)
+		if shouldDispatch {
+			log.D(logger, "Dispatching player update hooks...")
+			err = app.DispatchHooks(
+				gameID,
+				models.PlayerUpdatedHook,
+				player.Serialize(app.EncryptionKey),
+			)
 			if err != nil {
-				log.E(l, "Updating player failed.", func(cm log.CM) {
+				log.E(logger, "Update player hook dispatch failed.", func(cm log.CM) {
 					cm.Write(zap.Error(err))
 				})
-				return err
+				return FailWith(http.StatusInternalServerError, err.Error(), c)
 			}
-			return nil
-		})
-		if err != nil {
-			return FailWith(http.StatusInternalServerError, err.Error(), c)
 		}
 
-		err = WithSegment("hook-dispatch", c, func() error {
-			shouldDispatch := validateUpdatePlayerDispatch(game, beforeUpdatePlayer, player, payload.Metadata, l)
-			if shouldDispatch {
-				log.D(l, "Dispatching player update hooks...")
-				err = app.DispatchHooks(gameID, models.PlayerUpdatedHook, player.Serialize())
-				if err != nil {
-					log.E(l, "Update player hook dispatch failed.", func(cm log.CM) {
-						cm.Write(zap.Error(err))
-					})
-					return err
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return FailWith(http.StatusInternalServerError, err.Error(), c)
-		}
-
-		log.D(l, "Player updated successfully.", func(cm log.CM) {
+		log.D(logger, "Player updated successfully.", func(cm log.CM) {
 			cm.Write(zap.Duration("duration", time.Now().Sub(start)))
 		})
 		return SucceedWith(map[string]interface{}{}, c)
@@ -211,49 +205,46 @@ func RetrievePlayerHandler(app *App) func(c echo.Context) error {
 		gameID := c.Param("gameID")
 		publicID := c.Param("playerPublicID")
 
-		l := app.Logger.With(
+		logger := app.Logger.With(
 			zap.String("source", "playerHandler"),
 			zap.String("operation", "retrievePlayer"),
 			zap.String("gameID", gameID),
 			zap.String("playerPublicID", publicID),
 		)
 
-		log.D(l, "Getting DB connection...")
+		log.D(logger, "Getting DB connection...")
 		db, err := app.GetCtxDB(c)
 		if err != nil {
-			log.E(l, "Failed to connect to DB.", func(cm log.CM) {
+			log.E(logger, "Failed to connect to DB.", func(cm log.CM) {
 				cm.Write(zap.Error(err))
 			})
 			return FailWith(http.StatusInternalServerError, err.Error(), c)
 		}
-		log.D(l, "DB Connection successful.")
+		log.D(logger, "DB Connection successful.")
 
-		var player map[string]interface{}
-		err = WithSegment("player-get-details", c, func() error {
-			log.D(l, "Retrieving player details...")
-			player, err = models.GetPlayerDetails(
-				db,
-				gameID,
-				publicID,
-			)
-			return err
-		})
+		log.D(logger, "Retrieving player details...")
+		player, err := models.GetPlayerDetails(
+			db,
+			app.EncryptionKey,
+			gameID,
+			publicID,
+		)
 
 		if err != nil {
 			if err.Error() == fmt.Sprintf("Player was not found with id: %s", publicID) {
-				log.D(l, "Player was not found.", func(cm log.CM) {
+				log.D(logger, "Player was not found.", func(cm log.CM) {
 					cm.Write(zap.Error(err))
 				})
 				return FailWith(http.StatusNotFound, err.Error(), c)
 			}
 
-			log.E(l, "Retrieve player details failed.", func(cm log.CM) {
+			log.E(logger, "Retrieve player details failed.", func(cm log.CM) {
 				cm.Write(zap.Error(err))
 			})
 			return FailWith(http.StatusInternalServerError, err.Error(), c)
 		}
 
-		log.D(l, "Player details retrieved successfully.", func(cm log.CM) {
+		log.D(logger, "Player details retrieved successfully.", func(cm log.CM) {
 			cm.Write(zap.Duration("duration", time.Now().Sub(start)))
 		})
 

@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"github.com/topfreegames/khan/models"
+	"github.com/topfreegames/khan/models/fixtures"
+	khanTesting "github.com/topfreegames/khan/testing"
 )
 
 var playerResult *http.Response
@@ -24,7 +26,12 @@ func BenchmarkCreatePlayer(b *testing.B) {
 		panic(err.Error())
 	}
 
-	game, _, err := getGameAndPlayer(db)
+	mongoDB, err := khanTesting.GetTestMongo()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	game, _, err := getGameAndPlayer(db, mongoDB)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -47,14 +54,19 @@ func BenchmarkUpdatePlayer(b *testing.B) {
 		panic(err.Error())
 	}
 
-	game, _, err := getGameAndPlayer(db)
+	mongoDB, err := khanTesting.GetTestMongo()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	game, _, err := getGameAndPlayer(db, mongoDB)
 	if err != nil {
 		panic(err.Error())
 	}
 
 	var players []*models.Player
 	for i := 0; i < b.N; i++ {
-		player := models.PlayerFactory.MustCreateWithOption(map[string]interface{}{
+		player := fixtures.PlayerFactory.MustCreateWithOption(map[string]interface{}{
 			"GameID": game.PublicID,
 		}).(*models.Player)
 		err = db.Insert(player)
@@ -84,7 +96,7 @@ func BenchmarkRetrievePlayer(b *testing.B) {
 	}
 
 	gameID := uuid.NewV4().String()
-	player, err := models.GetTestPlayerWithMemberships(db, gameID, 50, 20, 30, 80)
+	_, player, err := fixtures.GetTestPlayerWithMemberships(db, gameID, 50, 20, 30, 80)
 	if err != nil {
 		panic(err.Error())
 	}

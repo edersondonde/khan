@@ -1,6 +1,6 @@
 # Khan
 
-[![Build Status](https://travis-ci.org/topfreegames/khan.svg?branch=master)](https://travis-ci.org/topfreegames/khan)
+[![Khan](https://github.com/topfreegames/khan/actions/workflows/go.yml/badge.svg)](https://github.com/topfreegames/khan/actions/workflows/go.yml)
 [![Coverage Status](https://coveralls.io/repos/github/topfreegames/khan/badge.svg?branch=master)](https://coveralls.io/github/topfreegames/khan?branch=master)
 [![Code Climate](https://codeclimate.com/github/topfreegames/khan/badges/gpa.svg)](https://codeclimate.com/github/topfreegames/khan)
 [![Go Report Card](https://goreportcard.com/badge/github.com/topfreegames/khan)](https://goreportcard.com/report/github.com/topfreegames/khan)
@@ -53,6 +53,16 @@ Provided you have docker installed, to build Khan's image run:
 To run a new khan instance, run:
 
     $ make run-docker
+
+### Running with docker-compose
+
+We already provide a docker-compose.yml as well with all dependencies configured for you to run. To run Khan and all its dependencies, run:
+
+```sh
+    $ docker-compose up
+```
+
+**Note** If you are running it on MacOS, you will need to update the amount of RAM docker has access to. Docker, by default, can use 2GB of RAM, however, Khan uses an instance of ElasticSearch and it needs at least 2GB of RAM to work properly. So, if you are experiencing problems while connecting to the elastic search, this might be the root cause of the problem.
 
 ### Tests
 

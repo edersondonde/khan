@@ -13,8 +13,8 @@ import (
 
 	"github.com/go-gorp/gorp"
 	_ "github.com/lib/pq" //This is required to use postgres with database/sql
-	egorp "github.com/topfreegames/extensions/gorp"
-	"github.com/topfreegames/extensions/gorp/interfaces"
+	egorp "github.com/topfreegames/extensions/v9/gorp"
+	"github.com/topfreegames/extensions/v9/gorp/interfaces"
 	"github.com/topfreegames/khan/util"
 )
 
@@ -82,6 +82,7 @@ func InitDb(host string, user string, port int, sslmode string, dbName string, p
 
 	dbmap.AddTableWithName(Game{}, "games").SetKeys(true, "ID")
 	dbmap.AddTableWithName(Player{}, "players").SetKeys(true, "ID")
+	dbmap.AddTableWithName(EncryptedPlayer{}, "encrypted_players")
 	dbmap.AddTableWithName(Clan{}, "clans").SetKeys(true, "ID")
 	dbmap.AddTableWithName(Membership{}, "memberships").SetKeys(true, "ID")
 	dbmap.AddTableWithName(Hook{}, "hooks").SetKeys(true, "ID")

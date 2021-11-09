@@ -15,23 +15,11 @@ import (
 	"net/http"
 
 	uuid "github.com/satori/go.uuid"
-	"github.com/spf13/viper"
-	"github.com/topfreegames/extensions/mongo"
-	"github.com/topfreegames/extensions/mongo/interfaces"
+	"github.com/topfreegames/extensions/v9/mongo/interfaces"
 	"github.com/topfreegames/khan/models"
+	"github.com/topfreegames/khan/models/fixtures"
+	"github.com/topfreegames/khan/mongo"
 )
-
-func getTestMongo() (interfaces.MongoDB, error) {
-	config := viper.New()
-	config.SetConfigType("yaml")
-	config.SetConfigFile("../config/perf.yaml")
-	err := config.ReadInConfig()
-	if err != nil {
-		return nil, err
-	}
-	client, err := mongo.NewClient("mongodb", config)
-	return client.MongoDB, err
-}
 
 func getRoute(url string) string {
 	return fmt.Sprintf("http://localhost:8888%s", url)
@@ -99,8 +87,8 @@ func getPlayerPayload(playerPublicID string) map[string]interface{} {
 	}
 }
 
-func getGameAndPlayer(db models.DB) (*models.Game, *models.Player, error) {
-	game := models.GameFactory.MustCreateWithOption(map[string]interface{}{
+func getGameAndPlayer(db models.DB, mongoDB interfaces.MongoDB) (*models.Game, *models.Player, error) {
+	game := fixtures.GameFactory.MustCreateWithOption(map[string]interface{}{
 		"PublicID":          uuid.NewV4().String(),
 		"MaxClansPerPlayer": 999999,
 	}).(*models.Game)
@@ -108,11 +96,16 @@ func getGameAndPlayer(db models.DB) (*models.Game, *models.Player, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	player := models.PlayerFactory.MustCreateWithOption(map[string]interface{}{
+	player := fixtures.PlayerFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":   game.PublicID,
 		"PublicID": uuid.NewV4().String(),
 	}).(*models.Player)
 	err = db.Insert(player)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = mongoDB.Run(mongo.GetClanNameTextIndexCommand(game.PublicID, false), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -134,7 +127,7 @@ func validateResp(res *http.Response, err error) {
 func createClans(db models.DB, game *models.Game, owner *models.Player, numberOfClans int) ([]*models.Clan, error) {
 	var clans []*models.Clan
 	for i := 0; i < numberOfClans; i++ {
-		clan := models.ClanFactory.MustCreateWithOption(map[string]interface{}{
+		clan := fixtures.ClanFactory.MustCreateWithOption(map[string]interface{}{
 			"GameID":   game.PublicID,
 			"PublicID": uuid.NewV4().String(),
 			"OwnerID":  owner.ID,

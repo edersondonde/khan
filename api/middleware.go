@@ -15,7 +15,6 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/getsentry/raven-go"
 	"github.com/labstack/echo"
 	"github.com/topfreegames/khan/log"
 	"github.com/topfreegames/khan/util"
@@ -67,61 +66,9 @@ type VersionMiddleware struct {
 // Serve serves the middleware
 func (v *VersionMiddleware) Serve(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		return WithSegment("middleware-version", c, func() error {
-			c.Response().Header().Set(echo.HeaderServer, fmt.Sprintf("Khan/v%s", v.Version))
-			c.Response().Header().Set("Khan-Server", fmt.Sprintf("Khan/v%s", v.Version))
-			return next(c)
-		})
-	}
-}
-
-//NewSentryMiddleware returns a new sentry middleware
-func NewSentryMiddleware(app *App) *SentryMiddleware {
-	return &SentryMiddleware{
-		App: app,
-	}
-}
-
-//SentryMiddleware is responsible for sending all exceptions to sentry
-type SentryMiddleware struct {
-	App *App
-}
-
-// Serve serves the middleware
-func (s *SentryMiddleware) Serve(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		return WithSegment("middleware-sentry", c, func() error {
-			err := next(c)
-			body := c.Get("body").(string)
-
-			if err == nil {
-				status := c.Response().Status()
-
-				//request is ok, but server failed
-				if status > 499 {
-					err = fmt.Errorf("Server failed to process response with status code 500: %s", body)
-				}
-			}
-
-			if err != nil {
-				if httpErr, ok := err.(*echo.HTTPError); ok {
-					if httpErr.Code < 500 {
-						return err
-					}
-				}
-				tags := map[string]string{
-					"source": "app",
-					"type":   "Internal server error",
-					"url":    c.Request().URI(),
-					"status": fmt.Sprintf("%d", c.Response().Status()),
-					"body":   body,
-				}
-				raven.SetHttpContext(newHTTPFromCtx(c))
-				raven.CaptureError(err, tags)
-			}
-
-			return err
-		})
+		c.Response().Header().Set(echo.HeaderServer, fmt.Sprintf("Khan/v%s", v.Version))
+		c.Response().Header().Set("Khan-Server", fmt.Sprintf("Khan/v%s", v.Version))
+		return next(c)
 	}
 }
 
@@ -139,19 +86,6 @@ func getHTTPParams(ctx echo.Context) (string, map[string]string, string) {
 
 	cookies := string(ctx.Response().Header().Get("Cookie"))
 	return qs, headers, cookies
-}
-
-func newHTTPFromCtx(ctx echo.Context) *raven.Http {
-	qs, headers, cookies := getHTTPParams(ctx)
-
-	h := &raven.Http{
-		Method:  string(ctx.Request().Method()),
-		Cookies: cookies,
-		Query:   qs,
-		URL:     ctx.Request().URI(),
-		Headers: headers,
-	}
-	return h
 }
 
 //NewRecoveryMiddleware returns a configured middleware
@@ -199,7 +133,7 @@ type LoggerMiddleware struct {
 // Serve serves the middleware
 func (l *LoggerMiddleware) Serve(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		l := l.Logger.With(
+		logger := l.Logger.With(
 			zap.String("source", "request"),
 		)
 
@@ -225,11 +159,11 @@ func (l *LoggerMiddleware) Serve(next echo.HandlerFunc) echo.HandlerFunc {
 
 		route := c.Get("route")
 		if route == nil {
-			log.D(l, "Route does not have route set in ctx")
+			log.D(logger, "Route does not have route set in ctx")
 			return err
 		}
 
-		reqLog := l.With(
+		reqLog := logger.With(
 			zap.String("route", route.(string)),
 			zap.Time("endTime", endTime),
 			zap.Int("statusCode", status),
@@ -257,39 +191,5 @@ func (l *LoggerMiddleware) Serve(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		return err
-	}
-}
-
-//NewNewRelicMiddleware returns the logger middleware
-func NewNewRelicMiddleware(app *App, theLogger zap.Logger) *NewRelicMiddleware {
-	l := &NewRelicMiddleware{App: app, Logger: theLogger}
-	return l
-}
-
-//NewRelicMiddleware is responsible for logging to Zap all requests
-type NewRelicMiddleware struct {
-	App    *App
-	Logger zap.Logger
-}
-
-// Serve serves the middleware
-func (nr *NewRelicMiddleware) Serve(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		method := c.Request().Method()
-		route := fmt.Sprintf("%s %s", method, c.Path())
-		txn := nr.App.NewRelic.StartTransaction(route, nil, nil)
-		c.Set("txn", txn)
-		defer func() {
-			c.Set("txn", nil)
-			txn.End()
-		}()
-
-		err := next(c)
-		if err != nil {
-			txn.NoticeError(err)
-			return err
-		}
-
-		return nil
 	}
 }

@@ -21,7 +21,6 @@ import (
 	"github.com/labstack/echo"
 	"github.com/mailru/easyjson/jlexer"
 	"github.com/mailru/easyjson/jwriter"
-	newrelic "github.com/newrelic/go-agent"
 	"github.com/topfreegames/khan/log"
 	"github.com/topfreegames/khan/models"
 	"github.com/uber-go/zap"
@@ -72,22 +71,16 @@ func SucceedWith(payload map[string]interface{}, c echo.Context) error {
 		payload["success"] = true
 		return c.JSON(http.StatusOK, payload)
 	}
-	tx := GetTX(c)
-	if tx == nil {
-		return f()
-	}
-	segment := newrelic.StartSegment(tx, "response-marshalling")
-	defer segment.End()
 	return f()
 }
 
 //LoadJSONPayload loads the JSON payload to the given struct validating all fields are not null
-func LoadJSONPayload(payloadStruct interface{}, c echo.Context, l zap.Logger) error {
-	log.D(l, "Loading payload...")
+func LoadJSONPayload(payloadStruct interface{}, c echo.Context, logger zap.Logger) error {
+	log.D(logger, "Loading payload...")
 
 	data, err := GetRequestBody(c)
 	if err != nil {
-		log.E(l, "Loading payload failed.", func(cm log.CM) {
+		log.E(logger, "Loading payload failed.", func(cm log.CM) {
 			cm.Write(zap.Error(err))
 		})
 		return err
@@ -96,7 +89,7 @@ func LoadJSONPayload(payloadStruct interface{}, c echo.Context, l zap.Logger) er
 	unmarshaler, ok := payloadStruct.(EasyJSONUnmarshaler)
 	if !ok {
 		err := fmt.Errorf("Can't unmarshal specified payload since it does not implement easyjson interface")
-		log.E(l, "Loading payload failed.", func(cm log.CM) {
+		log.E(logger, "Loading payload failed.", func(cm log.CM) {
 			cm.Write(zap.Error(err))
 		})
 		return err
@@ -105,7 +98,7 @@ func LoadJSONPayload(payloadStruct interface{}, c echo.Context, l zap.Logger) er
 	lexer := jlexer.Lexer{Data: []byte(data)}
 	unmarshaler.UnmarshalEasyJSON(&lexer)
 	if err = lexer.Error(); err != nil {
-		log.E(l, "Loading payload failed.", func(cm log.CM) {
+		log.E(logger, "Loading payload failed.", func(cm log.CM) {
 			cm.Write(zap.Error(err))
 		})
 		return err
@@ -116,14 +109,14 @@ func LoadJSONPayload(payloadStruct interface{}, c echo.Context, l zap.Logger) er
 
 		if len(missingFieldErrors) != 0 {
 			err := errors.New(strings.Join(missingFieldErrors[:], ", "))
-			log.E(l, "Loading payload failed.", func(cm log.CM) {
+			log.E(logger, "Loading payload failed.", func(cm log.CM) {
 				cm.Write(zap.Error(err))
 			})
 			return err
 		}
 	}
 
-	log.D(l, "Payload loaded successfully.")
+	log.D(logger, "Payload loaded successfully.")
 	return nil
 }
 
@@ -155,27 +148,6 @@ func GetRequestJSON(payloadStruct interface{}, c echo.Context) error {
 	}
 
 	return nil
-}
-
-//GetTX returns new relic transaction
-func GetTX(c echo.Context) newrelic.Transaction {
-	tx := c.Get("txn")
-	if tx == nil {
-		return nil
-	}
-
-	return tx.(newrelic.Transaction)
-}
-
-//WithSegment adds a segment to new relic transaction
-func WithSegment(name string, c echo.Context, f func() error) error {
-	tx := GetTX(c)
-	if tx == nil {
-		return f()
-	}
-	segment := newrelic.StartSegment(tx, name)
-	defer segment.End()
-	return f()
 }
 
 // SetRetrieveClanHandlerConfigurationDefaults sets the default configs for RetrieveClanHandler

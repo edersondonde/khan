@@ -25,21 +25,24 @@ import (
 	uuid "github.com/satori/go.uuid"
 	"github.com/topfreegames/khan/api"
 	"github.com/topfreegames/khan/models"
+	"github.com/topfreegames/khan/models/fixtures"
 	"github.com/topfreegames/khan/testing"
 )
 
 var _ = Describe("Clan API Handler", func() {
 	var testDb, db models.DB
-	var a *api.App
+	var app *api.App
+	var mongoWorker *models.MongoWorker
 
 	BeforeEach(func() {
 		var err error
 		testDb, err = GetTestDB()
 		Expect(err).NotTo(HaveOccurred())
 
-		a = GetDefaultTestApp()
-		db = a.Db(nil)
-		a.NonblockingStartWorkers()
+		app = GetDefaultTestApp()
+		db = app.Db(nil)
+
+		mongoWorker, _ = fixtures.ConfigureAndStartGoWorkers()
 	})
 
 	AfterEach(func() {
@@ -48,7 +51,7 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("Create Clan Handler", func() {
 		It("Should create clan", func() {
-			_, player, err := models.CreatePlayerFactory(testDb, "")
+			_, player, err := fixtures.CreatePlayerFactory(testDb, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			clanPublicID := randomdata.FullName(randomdata.RandomGender)
@@ -60,7 +63,7 @@ var _ = Describe("Clan API Handler", func() {
 				"allowApplication": true,
 				"autoJoin":         true,
 			}
-			status, body := PostJSON(a, GetGameRoute(player.GameID, "/clans"), payload)
+			status, body := PostJSON(app, GetGameRoute(player.GameID, "/clans"), payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -82,9 +85,9 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should create clan into mongodb if its configured", func() {
-			mongo, err := GetTestMongo()
+			mongo, err := testing.GetTestMongo()
 			Expect(err).NotTo(HaveOccurred())
-			_, player, err := models.CreatePlayerFactory(testDb, "")
+			_, player, err := fixtures.CreatePlayerFactory(testDb, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			metadata := map[string]interface{}{"x": "a"}
@@ -98,7 +101,7 @@ var _ = Describe("Clan API Handler", func() {
 				"allowApplication": true,
 				"autoJoin":         true,
 			}
-			status, body := PostJSON(a, GetGameRoute(player.GameID, "/clans"), payload)
+			status, body := PostJSON(app, GetGameRoute(player.GameID, "/clans"), payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -127,7 +130,7 @@ var _ = Describe("Clan API Handler", func() {
 		// TODO: fix this when hardcoded boomforce is removed
 		XIt("Should index clan into ES when created", func() {
 			es := GetTestES()
-			_, player, err := models.CreatePlayerFactory(testDb, "")
+			_, player, err := fixtures.CreatePlayerFactory(testDb, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			clanPublicID := randomdata.FullName(randomdata.RandomGender)
@@ -139,7 +142,7 @@ var _ = Describe("Clan API Handler", func() {
 				"allowApplication": true,
 				"autoJoin":         true,
 			}
-			status, body := PostJSON(a, GetGameRoute(player.GameID, "/clans"), payload)
+			status, body := PostJSON(app, GetGameRoute(player.GameID, "/clans"), payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -163,7 +166,7 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should not create clan if missing parameters", func() {
-			_, player, err := models.CreatePlayerFactory(testDb, "")
+			_, player, err := fixtures.CreatePlayerFactory(testDb, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			clanPublicID := randomdata.FullName(randomdata.RandomGender)
@@ -172,7 +175,7 @@ var _ = Describe("Clan API Handler", func() {
 				"allowApplication": true,
 				"autoJoin":         true,
 			}
-			status, body := PostJSON(a, GetGameRoute(player.GameID, "/clans"), payload)
+			status, body := PostJSON(app, GetGameRoute(player.GameID, "/clans"), payload)
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			var result map[string]interface{}
@@ -183,7 +186,7 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should not create clan if invalid payload", func() {
 			gameID := "gameID"
-			status, body := Post(a, GetGameRoute(gameID, "/clans"), "invalid")
+			status, body := Post(app, GetGameRoute(gameID, "/clans"), "invalid")
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			var result map[string]interface{}
@@ -193,7 +196,7 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should not create clan if owner does not exist", func() {
-			game, _, err := models.CreatePlayerFactory(testDb, "")
+			game, _, err := fixtures.CreatePlayerFactory(testDb, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			payload := map[string]interface{}{
@@ -204,7 +207,7 @@ var _ = Describe("Clan API Handler", func() {
 				"allowApplication": true,
 				"autoJoin":         true,
 			}
-			status, body := PostJSON(a, GetGameRoute(game.PublicID, "/clans"), payload)
+			status, body := PostJSON(app, GetGameRoute(game.PublicID, "/clans"), payload)
 
 			Expect(status).To(Equal(http.StatusNotFound))
 			var result map[string]interface{}
@@ -214,7 +217,7 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should not create clan if invalid data", func() {
-			_, player, err := models.CreatePlayerFactory(testDb, "")
+			_, player, err := fixtures.CreatePlayerFactory(testDb, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			payload := map[string]interface{}{
@@ -225,7 +228,7 @@ var _ = Describe("Clan API Handler", func() {
 				"allowApplication": true,
 				"autoJoin":         true,
 			}
-			status, body := PostJSON(a, GetGameRoute(player.GameID, "/clans"), payload)
+			status, body := PostJSON(app, GetGameRoute(player.GameID, "/clans"), payload)
 
 			Expect(status).To(Equal(http.StatusInternalServerError))
 			var result map[string]interface{}
@@ -237,11 +240,11 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("Leave Clan Handler", func() {
 		It("Should leave a clan and transfer ownership", func() {
-			_, clan, owner, players, memberships, err := models.GetClanWithMemberships(testDb, 1, 0, 0, 0, "", "")
+			_, clan, owner, players, memberships, err := fixtures.GetClanWithMemberships(testDb, 1, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			route := GetGameRoute(clan.GameID, fmt.Sprintf("clans/%s/leave", clan.PublicID))
-			status, body := PostJSON(a, route, map[string]interface{}{})
+			status, body := PostJSON(app, route, map[string]interface{}{})
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -263,7 +266,7 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should not leave a clan if invalid clan", func() {
 			route := GetGameRoute("game-id", fmt.Sprintf("clans/%s/leave", "random-id"))
-			status, body := Post(a, route, "")
+			status, body := Post(app, route, "")
 
 			Expect(status).To(Equal(http.StatusNotFound))
 			var result map[string]interface{}
@@ -275,7 +278,7 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("Transfer Clan Ownership Handler", func() {
 		It("Should transfer a clan ownership", func() {
-			_, clan, owner, players, _, err := models.GetClanWithMemberships(testDb, 1, 0, 0, 0, "", "")
+			_, clan, owner, players, _, err := fixtures.GetClanWithMemberships(testDb, 1, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 			ownerPublicID := owner.PublicID
 			playerPublicID := players[0].PublicID
@@ -285,7 +288,7 @@ var _ = Describe("Clan API Handler", func() {
 				"playerPublicID": playerPublicID,
 			}
 			route := GetGameRoute(clan.GameID, fmt.Sprintf("clans/%s/transfer-ownership", clan.PublicID))
-			status, body := PostJSON(a, route, payload)
+			status, body := PostJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -299,7 +302,7 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should not transfer a clan ownership if missing parameters", func() {
 			route := GetGameRoute("game-id", fmt.Sprintf("clans/%s/transfer-ownership", "public-id"))
-			status, body := PostJSON(a, route, map[string]interface{}{})
+			status, body := PostJSON(app, route, map[string]interface{}{})
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			var result map[string]interface{}
@@ -311,7 +314,7 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should not transfer a clan ownership if invalid payload", func() {
 			route := GetGameRoute("game-id", fmt.Sprintf("clans/%s/transfer-ownership", "random-id"))
-			status, body := Post(a, route, "invalid")
+			status, body := Post(app, route, "invalid")
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			var result map[string]interface{}
@@ -323,7 +326,7 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("Update Clan Handler", func() {
 		It("Should update clan", func() {
-			_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			gameID := clan.GameID
@@ -340,7 +343,7 @@ var _ = Describe("Clan API Handler", func() {
 				"autoJoin":         !clan.AutoJoin,
 			}
 			route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-			status, body := PutJSON(a, route, payload)
+			status, body := PutJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -359,9 +362,9 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should update Mongo if update clan", func() {
-			mongo, err := GetTestMongo()
+			mongo, err := testing.GetTestMongo()
 			Expect(err).NotTo(HaveOccurred())
-			_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			gameID := clan.GameID
@@ -396,7 +399,7 @@ var _ = Describe("Clan API Handler", func() {
 				"autoJoin":         !clan.AutoJoin,
 			}
 			route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", clan.PublicID))
-			status, body := PutJSON(a, route, payload)
+			status, body := PutJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -420,7 +423,7 @@ var _ = Describe("Clan API Handler", func() {
 		XIt("Should update ES if update clan", func() {
 			es := GetTestES()
 
-			_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			gameID := clan.GameID
@@ -443,7 +446,7 @@ var _ = Describe("Clan API Handler", func() {
 				"autoJoin":         !clan.AutoJoin,
 			}
 			route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-			status, body := PutJSON(a, route, payload)
+			status, body := PutJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -486,7 +489,7 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should not update clan if missing parameters", func() {
 			route := GetGameRoute("gameID", fmt.Sprintf("/clans/%s", "publicID"))
-			status, body := PutJSON(a, route, map[string]interface{}{})
+			status, body := PutJSON(app, route, map[string]interface{}{})
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			var result map[string]interface{}
@@ -498,7 +501,7 @@ var _ = Describe("Clan API Handler", func() {
 		It("Should not update clan if invalid payload", func() {
 			route := GetGameRoute("game-id", fmt.Sprintf("/clans/%s", "random-id"))
 
-			status, body := Put(a, route, "invalid")
+			status, body := Put(app, route, "invalid")
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			var result map[string]interface{}
@@ -508,7 +511,7 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should not update clan if player is not the owner", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			gameID := clan.GameID
@@ -524,7 +527,7 @@ var _ = Describe("Clan API Handler", func() {
 			}
 			route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
 
-			status, body := PutJSON(a, route, payload)
+			status, body := PutJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusNotFound))
 			var result map[string]interface{}
@@ -534,7 +537,7 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should not update clan if invalid data", func() {
-			_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			gameID := clan.GameID
@@ -549,7 +552,7 @@ var _ = Describe("Clan API Handler", func() {
 			}
 			route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
 
-			status, body := PutJSON(a, route, payload)
+			status, body := PutJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusInternalServerError))
 			var result map[string]interface{}
@@ -561,11 +564,14 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("List All Clans Handler", func() {
 		It("Should get all clans", func() {
-			player, expectedClans, err := models.GetTestClans(testDb, "", "", 10)
+			mongoDB, err := testing.GetTestMongo()
+			Expect(err).NotTo(HaveOccurred())
+
+			player, expectedClans, err := fixtures.CreateTestClans(testDb, mongoDB, "", "", 10, fixtures.EnqueueClanForMongoUpdate)
 			Expect(err).NotTo(HaveOccurred())
 			sort.Sort(models.ClanByName(expectedClans))
 
-			status, body := Get(a, GetGameRoute(player.GameID, "/clans"))
+			status, body := Get(app, GetGameRoute(player.GameID, "/clans"))
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -587,7 +593,7 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should return empty list if invalid game query", func() {
-			status, body := Get(a, GetGameRoute("invalid-query-game-id", "/clans"))
+			status, body := Get(app, GetGameRoute("invalid-query-game-id", "/clans"))
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -600,10 +606,10 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("Retrieve Clan Handler", func() {
 		It("Should get details for clan", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -620,10 +626,10 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should get details for clan with short publicID", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?shortID=true", clan.PublicID[0:8])))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?shortID=true", clan.PublicID[0:8])))
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -641,12 +647,12 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should get clan members", func() {
 			gameID := uuid.NewV4().String()
-			_, clan, _, _, _, err := models.GetClanWithMemberships(
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(
 				testDb, 10, 0, 0, 0, gameID, "clan-details-api-clan",
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -658,60 +664,60 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should fail with 400 if maxPendingApplications cannot be parsed as uint", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=xablau", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=xablau", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			Expect(body).To(ContainSubstring("invalid syntax"))
 		})
 
 		It("Should fail with 400 if maxPendingApplications is above allowed", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=101", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=101", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			Expect(body).To(ContainSubstring("above allowed"))
 		})
 
 		It("Should fail with 400 if maxPendingInvites cannot be parsed as uint", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=xablau", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=xablau", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			Expect(body).To(ContainSubstring("invalid syntax"))
 		})
 
 		It("Should fail with 400 if maxPendingInvites is above allowed", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=101", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=101", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			Expect(body).To(ContainSubstring("above allowed"))
 		})
 
 		It("Should fail with 400 if pendingApplicationsOrder is not a valid order string", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?pendingApplicationsOrder=xablau", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?pendingApplicationsOrder=xablau", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			Expect(body).To(ContainSubstring("order is invalid"))
 		})
 
 		It("Should fail with 400 if pendingInvitesOrder is not a valid order string", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?pendingInvitesOrder=xablau", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?pendingInvitesOrder=xablau", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusBadRequest))
 			Expect(body).To(ContainSubstring("order is invalid"))
@@ -733,10 +739,10 @@ var _ = Describe("Clan API Handler", func() {
 		}
 
 		It("should get pending applications even if max amount is not set", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, false, true)
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, false, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s", clan.PublicID)))
 			Expect(status).To(Equal(http.StatusOK))
 
 			var result retrieveClanPayload
@@ -746,10 +752,10 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("should get pending invites even if max amount is not set", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, true, true)
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, true, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s", clan.PublicID)))
 			Expect(status).To(Equal(http.StatusOK))
 
 			var result retrieveClanPayload
@@ -783,60 +789,60 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should get newest pending applications if order is not set", func() {
 			maxPending := 7
-			_, clan, _, _, memberships, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, false, true)
+			_, clan, _, _, memberships, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, false, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=%v", clan.PublicID, maxPending)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=%v", clan.PublicID, maxPending)))
 			Expect(status).To(Equal(http.StatusOK))
 			validateRetrieveClanResponse(memberships, body, ">", maxPending, false)
 		})
 
 		It("Should get newest pending applications", func() {
 			maxPending := 7
-			_, clan, _, _, memberships, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, false, true)
+			_, clan, _, _, memberships, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, false, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=%v&pendingApplicationsOrder=newest", clan.PublicID, maxPending)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=%v&pendingApplicationsOrder=newest", clan.PublicID, maxPending)))
 			Expect(status).To(Equal(http.StatusOK))
 			validateRetrieveClanResponse(memberships, body, ">", maxPending, false)
 		})
 
 		It("Should get oldest pending applications", func() {
 			maxPending := 7
-			_, clan, _, _, memberships, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, false, true)
+			_, clan, _, _, memberships, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, false, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=%v&pendingApplicationsOrder=oldest", clan.PublicID, maxPending)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingApplications=%v&pendingApplicationsOrder=oldest", clan.PublicID, maxPending)))
 			Expect(status).To(Equal(http.StatusOK))
 			validateRetrieveClanResponse(memberships, body, "<", maxPending, false)
 		})
 
 		It("Should get newest pending invites if order is not set", func() {
 			maxPending := 7
-			_, clan, _, _, memberships, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, true, true)
+			_, clan, _, _, memberships, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, true, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=%v", clan.PublicID, maxPending)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=%v", clan.PublicID, maxPending)))
 			Expect(status).To(Equal(http.StatusOK))
 			validateRetrieveClanResponse(memberships, body, ">", maxPending, true)
 		})
 
 		It("Should get newest pending invites", func() {
 			maxPending := 7
-			_, clan, _, _, memberships, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, true, true)
+			_, clan, _, _, memberships, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, true, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=%v&pendingInvitesOrder=newest", clan.PublicID, maxPending)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=%v&pendingInvitesOrder=newest", clan.PublicID, maxPending)))
 			Expect(status).To(Equal(http.StatusOK))
 			validateRetrieveClanResponse(memberships, body, ">", maxPending, true)
 		})
 
 		It("Should get oldest pending invites", func() {
 			maxPending := 7
-			_, clan, _, _, memberships, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, true, true)
+			_, clan, _, _, memberships, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 10, "", "", false, true, true)
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=%v&pendingInvitesOrder=oldest", clan.PublicID, maxPending)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s?maxPendingInvites=%v&pendingInvitesOrder=oldest", clan.PublicID, maxPending)))
 			Expect(status).To(Equal(http.StatusOK))
 			validateRetrieveClanResponse(memberships, body, "<", maxPending, true)
 		})
@@ -845,9 +851,9 @@ var _ = Describe("Clan API Handler", func() {
 	Describe("Retrieve Clan Members Handler", func() {
 		It("Should get clans player ids", func() {
 			gameID := uuid.NewV4().String()
-			_, clan, owner, players, _, err := models.GetClanWithMemberships(testDb, 10, 0, 0, 0, gameID, "clan1")
+			_, clan, owner, players, _, err := fixtures.GetClanWithMemberships(testDb, 10, 0, 0, 0, gameID, "clan1")
 			Expect(err).NotTo(HaveOccurred())
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s/members", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s/members", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -867,11 +873,11 @@ var _ = Describe("Clan API Handler", func() {
 	Describe("Retrieve Clans Handler", func() {
 		It("Should get details for clans", func() {
 			gameID := uuid.NewV4().String()
-			_, clan1, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan1")
+			_, clan1, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan1")
 			Expect(err).NotTo(HaveOccurred())
-			_, clan2, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan2", true)
+			_, clan2, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan2", true)
 			Expect(err).NotTo(HaveOccurred())
-			_, clan3, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan3", true)
+			_, clan3, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan3", true)
 			Expect(err).NotTo(HaveOccurred())
 
 			clanIDs := []string{clan1.PublicID, clan2.PublicID, clan3.PublicID}
@@ -881,7 +887,7 @@ var _ = Describe("Clan API Handler", func() {
 				GetGameRoute(clan1.GameID, "clans-summary"),
 				strings.Join(clanIDs, ","),
 			)
-			status, body := Get(a, url)
+			status, body := Get(app, url)
 			Expect(status).To(Equal(http.StatusOK))
 
 			var result map[string]interface{}
@@ -914,7 +920,7 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should not get details for clans for unexistent game", func() {
 			gameID := uuid.NewV4().String()
-			_, clan, _, _, _, err := models.GetClanWithMemberships(
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(
 				testDb, 10, 0, 0, 0, gameID, uuid.NewV4().String(),
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -926,7 +932,7 @@ var _ = Describe("Clan API Handler", func() {
 				GetGameRoute("unexistent_game", "clans-summary"),
 				strings.Join(clanIDs, ","),
 			)
-			status, body := Get(a, url)
+			status, body := Get(app, url)
 
 			var result map[string]interface{}
 			json.Unmarshal([]byte(body), &result)
@@ -940,10 +946,10 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should fail with 400 if empty query string", func() {
 			gameID := uuid.NewV4().String()
-			_, clan1, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, uuid.NewV4().String())
+			_, clan1, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, uuid.NewV4().String())
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan1.GameID, "clans-summary"))
+			status, body := Get(app, GetGameRoute(clan1.GameID, "clans-summary"))
 			Expect(status).To(Equal(http.StatusBadRequest))
 			var result map[string]interface{}
 			json.Unmarshal([]byte(body), &result)
@@ -953,11 +959,11 @@ var _ = Describe("Clan API Handler", func() {
 
 		It("Should not fail if some clans do not exists", func() {
 			gameID := uuid.NewV4().String()
-			_, clan1, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan1")
+			_, clan1, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan1")
 			Expect(err).NotTo(HaveOccurred())
-			_, clan2, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan2", true)
+			_, clan2, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan2", true)
 			Expect(err).NotTo(HaveOccurred())
-			_, clan3, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan3", true)
+			_, clan3, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, gameID, "clan3", true)
 			Expect(err).NotTo(HaveOccurred())
 
 			clanIDs := []string{clan1.PublicID, clan2.PublicID, clan3.PublicID, "unexistent_clan", "unexistent_clan2"}
@@ -967,7 +973,7 @@ var _ = Describe("Clan API Handler", func() {
 				GetGameRoute(clan1.GameID, "clans-summary"),
 				strings.Join(clanIDs, ","),
 			)
-			status, body := Get(a, url)
+			status, body := Get(app, url)
 			Expect(status).To(Equal(http.StatusOK))
 
 			var result map[string]interface{}
@@ -1006,10 +1012,10 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("Retrieve Clan Summary Handler", func() {
 		It("Should get details for clan", func() {
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
-			status, body := Get(a, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s/summary", clan.PublicID)))
+			status, body := Get(app, GetGameRoute(clan.GameID, fmt.Sprintf("/clans/%s/summary", clan.PublicID)))
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -1029,7 +1035,7 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should not get details for clan that does not exist", func() {
-			status, body := Get(a, GetGameRoute("game-id", "/clans/dont-exist/summary"))
+			status, body := Get(app, GetGameRoute("game-id", "/clans/dont-exist/summary"))
 			Expect(status).To(Equal(http.StatusNotFound))
 			var result map[string]interface{}
 			json.Unmarshal([]byte(body), &result)
@@ -1040,16 +1046,20 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("Search Clan Handler", func() {
 		It("Should search for a clan", func() {
+			insertClanIntoMongo := func(player *models.Player, clan *models.Clan) error {
+				return mongoWorker.InsertGame(context.Background(), player.GameID, clan)
+			}
+
 			gameID := uuid.NewV4().String()
-			player, expectedClans, err := models.GetTestClans(
-				testDb, gameID, "clan-apisearch-clan", 10,
+			mongoDB, err := testing.GetTestMongo()
+			Expect(err).NotTo(HaveOccurred())
+
+			player, expectedClans, err := fixtures.CreateTestClans(
+				testDb, mongoDB, gameID, "clan-apisearch-clan", 10, insertClanIntoMongo,
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = testing.CreateClanNameTextIndexInMongo(GetTestMongo, gameID)
-			Expect(err).NotTo(HaveOccurred())
-
-			status, body := Get(a, GetGameRoute(player.GameID, "clans/search?term=APISEARCH"))
+			status, body := Get(app, GetGameRoute(player.GameID, "clans/search?term=APISEARCH"))
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -1076,13 +1086,16 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should search for a clan by publicID", func() {
+			mongoDB, err := testing.GetTestMongo()
+			Expect(err).NotTo(HaveOccurred())
+
 			gameID := uuid.NewV4().String()
-			player, expectedClans, err := models.GetTestClans(
-				testDb, gameID, "clan-apisearch-clan", 10,
+			player, expectedClans, err := fixtures.CreateTestClans(
+				testDb, mongoDB, gameID, "clan-apisearch-clan", 10, fixtures.EnqueueClanForMongoUpdate,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			time.Sleep(1000 * time.Millisecond)
-			status, body := Get(a, GetGameRoute(
+			status, body := Get(app, GetGameRoute(
 				player.GameID, fmt.Sprintf("clans/search?term=%s", expectedClans[3].PublicID),
 			))
 
@@ -1100,17 +1113,17 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should unicode search for a clan", func() {
+			mongoDB, err := testing.GetTestMongo()
+			Expect(err).NotTo(HaveOccurred())
+
 			gameID := uuid.NewV4().String()
-			player, expectedClans, err := models.GetTestClans(
-				testDb, gameID, "clan-apisearch-clan", 10,
+			player, expectedClans, err := fixtures.CreateTestClans(
+				testDb, mongoDB, gameID, "clan-apisearch-clan", 10, fixtures.EnqueueClanForMongoUpdate,
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = testing.CreateClanNameTextIndexInMongo(GetTestMongo, gameID)
-			Expect(err).NotTo(HaveOccurred())
-
 			url := "clans/search?term=💩clán-clan-APISEARCH"
-			status, body := Get(a, GetGameRoute(player.GameID, url))
+			status, body := Get(app, GetGameRoute(player.GameID, url))
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
 			json.Unmarshal([]byte(body), &result)
@@ -1175,13 +1188,13 @@ var _ = Describe("Clan API Handler", func() {
 
 	Describe("Clan Hooks", func() {
 		It("Should call create clan hook", func() {
-			hooks, err := models.GetHooksForRoutes(testDb, []string{
+			hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 				"http://localhost:52525/clancreated",
 			}, models.ClanCreatedHook)
 			Expect(err).NotTo(HaveOccurred())
 			responses := startRouteHandler([]string{"/clancreated"}, 52525)
 
-			_, player, err := models.CreatePlayerFactory(testDb, hooks[0].GameID, true)
+			_, player, err := fixtures.CreatePlayerFactory(testDb, hooks[0].GameID, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			clanPublicID := uuid.NewV4().String()
@@ -1193,7 +1206,7 @@ var _ = Describe("Clan API Handler", func() {
 				"allowApplication": true,
 				"autoJoin":         true,
 			}
-			status, body := PostJSON(a, GetGameRoute(player.GameID, "/clans"), payload)
+			status, body := PostJSON(app, GetGameRoute(player.GameID, "/clans"), payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -1223,13 +1236,13 @@ var _ = Describe("Clan API Handler", func() {
 		Describe("Update Clan Hook", func() {
 			Describe("Without whitelist", func() {
 				It("Should not call update clan hook", func() {
-					hooks, err := models.GetHooksForRoutes(testDb, []string{
+					hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 						"http://localhost:52525/clanupdated",
 					}, models.ClanUpdatedHook)
 					Expect(err).NotTo(HaveOccurred())
 					responses := startRouteHandler([]string{"/clanupdated"}, 52525)
 
-					_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
+					_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
 					Expect(err).NotTo(HaveOccurred())
 
 					gameID := clan.GameID
@@ -1246,7 +1259,7 @@ var _ = Describe("Clan API Handler", func() {
 						"autoJoin":         clan.AutoJoin,
 					}
 					route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-					status, body := PutJSON(a, route, payload)
+					status, body := PutJSON(app, route, payload)
 
 					Expect(status).To(Equal(http.StatusOK))
 					var result map[string]interface{}
@@ -1261,7 +1274,7 @@ var _ = Describe("Clan API Handler", func() {
 
 			Describe("With whitelist", func() {
 				It("Should call update clan hook if field in whitelist", func() {
-					hooks, err := models.GetHooksForRoutes(testDb, []string{
+					hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 						"http://localhost:52525/clanupdatedhookwhitelist",
 					}, models.ClanUpdatedHook)
 					Expect(err).NotTo(HaveOccurred())
@@ -1276,7 +1289,7 @@ var _ = Describe("Clan API Handler", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(count).To(BeEquivalentTo(1))
 
-					_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
+					_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
 					Expect(err).NotTo(HaveOccurred())
 
 					gameID := clan.GameID
@@ -1292,7 +1305,7 @@ var _ = Describe("Clan API Handler", func() {
 						"autoJoin":         clan.AutoJoin,
 					}
 					route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-					status, body := PutJSON(a, route, payload)
+					status, body := PutJSON(app, route, payload)
 
 					Expect(status).To(Equal(http.StatusOK))
 					var result map[string]interface{}
@@ -1319,7 +1332,7 @@ var _ = Describe("Clan API Handler", func() {
 				})
 
 				It("Should call update clan hook if field in whitelist is new", func() {
-					hooks, err := models.GetHooksForRoutes(testDb, []string{
+					hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 						"http://localhost:52525/clanupdatedhookwhitelist3",
 					}, models.ClanUpdatedHook)
 					Expect(err).NotTo(HaveOccurred())
@@ -1334,7 +1347,7 @@ var _ = Describe("Clan API Handler", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(count).To(BeEquivalentTo(1))
 
-					_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
+					_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
 					Expect(err).NotTo(HaveOccurred())
 
 					gameID := clan.GameID
@@ -1350,7 +1363,7 @@ var _ = Describe("Clan API Handler", func() {
 						"autoJoin":         clan.AutoJoin,
 					}
 					route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-					status, body := PutJSON(a, route, payload)
+					status, body := PutJSON(app, route, payload)
 
 					Expect(status).To(Equal(http.StatusOK))
 					var result map[string]interface{}
@@ -1377,7 +1390,7 @@ var _ = Describe("Clan API Handler", func() {
 				})
 
 				It("Should not call update clan hook if field not in whitelist", func() {
-					hooks, err := models.GetHooksForRoutes(testDb, []string{
+					hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 						"http://localhost:52525/clanupdatedhookwhitelist2",
 					}, models.ClanUpdatedHook)
 					Expect(err).NotTo(HaveOccurred())
@@ -1392,7 +1405,7 @@ var _ = Describe("Clan API Handler", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(count).To(BeEquivalentTo(1))
 
-					_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
+					_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
 					Expect(err).NotTo(HaveOccurred())
 
 					gameID := clan.GameID
@@ -1408,7 +1421,7 @@ var _ = Describe("Clan API Handler", func() {
 						"autoJoin":         clan.AutoJoin,
 					}
 					route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-					status, body := PutJSON(a, route, payload)
+					status, body := PutJSON(app, route, payload)
 
 					Expect(status).To(Equal(http.StatusOK))
 					var result map[string]interface{}
@@ -1422,7 +1435,7 @@ var _ = Describe("Clan API Handler", func() {
 
 				Describe("Should call update clan hook if clan details changed", func() {
 					It("by name", func() {
-						hooks, err := models.GetHooksForRoutes(testDb, []string{
+						hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 							"http://localhost:52525/clanupdatedhookwhitelist4",
 						}, models.ClanUpdatedHook)
 						Expect(err).NotTo(HaveOccurred())
@@ -1437,7 +1450,7 @@ var _ = Describe("Clan API Handler", func() {
 						Expect(err).NotTo(HaveOccurred())
 						Expect(count).To(BeEquivalentTo(1))
 
-						_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
+						_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
 						Expect(err).NotTo(HaveOccurred())
 
 						gameID := clan.GameID
@@ -1453,7 +1466,7 @@ var _ = Describe("Clan API Handler", func() {
 							"autoJoin":         clan.AutoJoin,
 						}
 						route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-						status, body := PutJSON(a, route, payload)
+						status, body := PutJSON(app, route, payload)
 
 						Expect(status).To(Equal(http.StatusOK))
 						var result map[string]interface{}
@@ -1466,7 +1479,7 @@ var _ = Describe("Clan API Handler", func() {
 					})
 
 					It("by AutoJoin", func() {
-						hooks, err := models.GetHooksForRoutes(testDb, []string{
+						hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 							"http://localhost:52525/clanupdatedhookwhitelist6",
 						}, models.ClanUpdatedHook)
 						Expect(err).NotTo(HaveOccurred())
@@ -1481,7 +1494,7 @@ var _ = Describe("Clan API Handler", func() {
 						Expect(err).NotTo(HaveOccurred())
 						Expect(count).To(BeEquivalentTo(1))
 
-						_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
+						_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
 						Expect(err).NotTo(HaveOccurred())
 
 						gameID := clan.GameID
@@ -1497,7 +1510,7 @@ var _ = Describe("Clan API Handler", func() {
 							"autoJoin":         !clan.AutoJoin,
 						}
 						route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-						status, body := PutJSON(a, route, payload)
+						status, body := PutJSON(app, route, payload)
 
 						Expect(status).To(Equal(http.StatusOK))
 						var result map[string]interface{}
@@ -1510,7 +1523,7 @@ var _ = Describe("Clan API Handler", func() {
 					})
 
 					It("by AllowApplication", func() {
-						hooks, err := models.GetHooksForRoutes(testDb, []string{
+						hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 							"http://localhost:52525/clanupdatedhookwhitelist5",
 						}, models.ClanUpdatedHook)
 						Expect(err).NotTo(HaveOccurred())
@@ -1525,7 +1538,7 @@ var _ = Describe("Clan API Handler", func() {
 						Expect(err).NotTo(HaveOccurred())
 						Expect(count).To(BeEquivalentTo(1))
 
-						_, clan, owner, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
+						_, clan, owner, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
 						Expect(err).NotTo(HaveOccurred())
 
 						gameID := clan.GameID
@@ -1541,7 +1554,7 @@ var _ = Describe("Clan API Handler", func() {
 							"autoJoin":         clan.AutoJoin,
 						}
 						route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s", publicID))
-						status, body := PutJSON(a, route, payload)
+						status, body := PutJSON(app, route, payload)
 
 						Expect(status).To(Equal(http.StatusOK))
 						var result map[string]interface{}
@@ -1557,13 +1570,13 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should call leave clan hook", func() {
-			hooks, err := models.GetHooksForRoutes(testDb, []string{
+			hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 				"http://localhost:52525/clanleave",
 			}, models.ClanLeftHook)
 			Expect(err).NotTo(HaveOccurred())
 			responses := startRouteHandler([]string{"/clanleave"}, 52525)
 
-			_, clan, _, players, _, err := models.GetClanWithMemberships(testDb, 1, 0, 0, 0, hooks[0].GameID, "", true)
+			_, clan, _, players, _, err := fixtures.GetClanWithMemberships(testDb, 1, 0, 0, 0, hooks[0].GameID, "", true)
 			Expect(err).NotTo(HaveOccurred())
 
 			gameID := clan.GameID
@@ -1571,7 +1584,7 @@ var _ = Describe("Clan API Handler", func() {
 
 			payload := map[string]interface{}{}
 			route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s/leave", publicID))
-			status, body := PostJSON(a, route, payload)
+			status, body := PostJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -1606,13 +1619,13 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should call leave clan hook when last member", func() {
-			hooks, err := models.GetHooksForRoutes(testDb, []string{
+			hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 				"http://localhost:52525/clanleave2",
 			}, models.ClanLeftHook)
 			Expect(err).NotTo(HaveOccurred())
 			responses := startRouteHandler([]string{"/clanleave2"}, 52525)
 
-			_, clan, _, _, _, err := models.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
+			_, clan, _, _, _, err := fixtures.GetClanWithMemberships(testDb, 0, 0, 0, 0, hooks[0].GameID, "", true)
 			Expect(err).NotTo(HaveOccurred())
 
 			gameID := clan.GameID
@@ -1620,7 +1633,7 @@ var _ = Describe("Clan API Handler", func() {
 
 			payload := map[string]interface{}{}
 			route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s/leave", publicID))
-			status, body := PostJSON(a, route, payload)
+			status, body := PostJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
@@ -1651,13 +1664,13 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should call transfer ownership hook", func() {
-			hooks, err := models.GetHooksForRoutes(testDb, []string{
+			hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 				"http://localhost:52525/clantransfer",
 			}, models.ClanOwnershipTransferredHook)
 			Expect(err).NotTo(HaveOccurred())
 			responses := startRouteHandler([]string{"/clantransfer"}, 52525)
 
-			_, clan, owner, players, _, err := models.GetClanWithMemberships(testDb, 1, 0, 0, 0, hooks[0].GameID, "", true)
+			_, clan, owner, players, _, err := fixtures.GetClanWithMemberships(testDb, 1, 0, 0, 0, hooks[0].GameID, "", true)
 			Expect(err).NotTo(HaveOccurred())
 
 			gameID := clan.GameID
@@ -1667,7 +1680,7 @@ var _ = Describe("Clan API Handler", func() {
 				"playerPublicID": players[0].PublicID,
 			}
 			route := GetGameRoute(gameID, fmt.Sprintf("/clans/%s/transfer-ownership", publicID))
-			status, body := PostJSON(a, route, payload)
+			status, body := PostJSON(app, route, payload)
 
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}

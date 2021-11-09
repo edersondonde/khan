@@ -16,9 +16,10 @@ import (
 	"github.com/Pallinder/go-randomdata"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"github.com/topfreegames/khan/api"
 	"github.com/topfreegames/khan/models"
+	"github.com/topfreegames/khan/models/fixtures"
 )
 
 func getGamePayload(publicID, name string) map[string]interface{} {
@@ -57,7 +58,7 @@ var _ = Describe("Game API Handler", func() {
 
 		a = GetDefaultTestApp()
 		db = a.Db(nil)
-		a.NonblockingStartWorkers()
+		fixtures.ConfigureAndStartGoWorkers()
 	})
 
 	Describe("Create Game Handler", func() {
@@ -155,6 +156,30 @@ var _ = Describe("Game API Handler", func() {
 			Expect(result["reason"].(string)).To(ContainSubstring(InvalidJSONError))
 		})
 
+		It("Should not create game and not panic if nil MembershipLevels", func() {
+			payload := getGamePayload("", "")
+			payload["membershipLevels"] = nil
+			status, body := PostJSON(a, "/games", payload)
+
+			Expect(status).To(Equal(http.StatusBadRequest))
+			var result map[string]interface{}
+			json.Unmarshal([]byte(body), &result)
+			Expect(result["success"]).To(BeFalse())
+			Expect(result["reason"].(string)).To(Equal("membershipLevels is required"))
+		})
+
+		It("Should not create game and not panic if empty MembershipLevels", func() {
+			payload := getGamePayload("", "")
+			payload["membershipLevels"] = make(map[string]interface{}, 0)
+			status, body := PostJSON(a, "/games", payload)
+
+			Expect(status).To(Equal(http.StatusBadRequest))
+			var result map[string]interface{}
+			json.Unmarshal([]byte(body), &result)
+			Expect(result["success"]).To(BeFalse())
+			Expect(result["reason"].(string)).To(Equal("membershipLevels is required"))
+		})
+
 		It("Should not create game if invalid data", func() {
 			payload := getGamePayload("game-id-is-too-large-for-this-field-should-be-less-than-36-chars", "")
 			status, body := PostJSON(a, "/games", payload)
@@ -169,7 +194,7 @@ var _ = Describe("Game API Handler", func() {
 
 	Describe("Update Game Handler", func() {
 		It("Should update game", func() {
-			game := models.GameFactory.MustCreate().(*models.Game)
+			game := fixtures.GameFactory.MustCreate().(*models.Game)
 			err := db.Insert(game)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -227,7 +252,7 @@ var _ = Describe("Game API Handler", func() {
 		})
 
 		It("Should not update game if missing parameters", func() {
-			game := models.GameFactory.MustCreate().(*models.Game)
+			game := fixtures.GameFactory.MustCreate().(*models.Game)
 			err := db.Insert(game)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -248,7 +273,7 @@ var _ = Describe("Game API Handler", func() {
 		})
 
 		It("Should not update game if bad payload", func() {
-			game := models.GameFactory.MustCreate().(*models.Game)
+			game := fixtures.GameFactory.MustCreate().(*models.Game)
 			err := db.Insert(game)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -265,6 +290,42 @@ var _ = Describe("Game API Handler", func() {
 			Expect(result["reason"]).To(Equal("minLevelToCreateInvitation should be greater or equal to minMembershipLevel"))
 		})
 
+		It("Should not update game and not panic if nil MembershipLevels", func() {
+			game := fixtures.GameFactory.MustCreate().(*models.Game)
+			err := db.Insert(game)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload := getGamePayload(game.PublicID, game.Name)
+			payload["membershipLevels"] = nil
+
+			route := fmt.Sprintf("/games/%s", game.PublicID)
+			status, body := PutJSON(a, route, payload)
+
+			Expect(status).To(Equal(400))
+			var result map[string]interface{}
+			json.Unmarshal([]byte(body), &result)
+			Expect(result["success"]).To(BeFalse())
+			Expect(result["reason"]).To(Equal("membershipLevels is required"))
+		})
+
+		It("Should not update game and not panic if empty MembershipLevels", func() {
+			game := fixtures.GameFactory.MustCreate().(*models.Game)
+			err := db.Insert(game)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload := getGamePayload(game.PublicID, game.Name)
+			payload["membershipLevels"] = make(map[string]interface{}, 0)
+
+			route := fmt.Sprintf("/games/%s", game.PublicID)
+			status, body := PutJSON(a, route, payload)
+
+			Expect(status).To(Equal(400))
+			var result map[string]interface{}
+			json.Unmarshal([]byte(body), &result)
+			Expect(result["success"]).To(BeFalse())
+			Expect(result["reason"]).To(Equal("membershipLevels is required"))
+		})
+
 		It("Should not update game if invalid payload", func() {
 			status, body := Put(a, "/games/game-id", "invalid")
 
@@ -276,7 +337,7 @@ var _ = Describe("Game API Handler", func() {
 		})
 
 		It("Should not update game if invalid data", func() {
-			game := models.GameFactory.MustCreate().(*models.Game)
+			game := fixtures.GameFactory.MustCreate().(*models.Game)
 			err := db.Insert(game)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -296,7 +357,7 @@ var _ = Describe("Game API Handler", func() {
 	Describe("Game Hooks", func() {
 		Describe("Update Game Hook", func() {
 			It("Should call update game hook", func() {
-				hooks, err := models.GetHooksForRoutes(testDb, []string{
+				hooks, err := fixtures.GetHooksForRoutes(testDb, []string{
 					"http://localhost:52525/update",
 				}, models.GameUpdatedHook)
 				Expect(err).NotTo(HaveOccurred())

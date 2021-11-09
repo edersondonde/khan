@@ -15,6 +15,7 @@ import (
 
 	uuid "github.com/satori/go.uuid"
 	"github.com/topfreegames/khan/models"
+	"github.com/topfreegames/khan/models/fixtures"
 	khanTesting "github.com/topfreegames/khan/testing"
 )
 
@@ -26,14 +27,19 @@ func BenchmarkCreateClan(b *testing.B) {
 		panic(err.Error())
 	}
 
-	game, _, err := getGameAndPlayer(db)
+	mongoDB, err := khanTesting.GetTestMongo()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	game, _, err := getGameAndPlayer(db, mongoDB)
 	if err != nil {
 		panic(err.Error())
 	}
 
 	var players []*models.Player
 	for i := 0; i < b.N; i++ {
-		player := models.PlayerFactory.MustCreateWithOption(map[string]interface{}{
+		player := fixtures.PlayerFactory.MustCreateWithOption(map[string]interface{}{
 			"GameID": game.PublicID,
 		}).(*models.Player)
 		err = db.Insert(player)
@@ -56,12 +62,19 @@ func BenchmarkCreateClan(b *testing.B) {
 }
 
 func BenchmarkUpdateClan(b *testing.B) {
+	fixtures.ConfigureAndStartGoWorkers()
+
 	db, err := models.GetPerfDB()
 	if err != nil {
 		panic(err.Error())
 	}
 
-	game, owner, err := getGameAndPlayer(db)
+	mongoDB, err := khanTesting.GetTestMongo()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	game, owner, err := getGameAndPlayer(db, mongoDB)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -91,7 +104,7 @@ func BenchmarkRetrieveClan(b *testing.B) {
 	}
 
 	gameID := uuid.NewV4().String()
-	_, clan, _, _, _, err := models.GetClanWithMemberships(
+	_, clan, _, _, _, err := fixtures.GetClanWithMemberships(
 		db, 50, 50, 50, 50, gameID, uuid.NewV4().String(),
 	)
 
@@ -118,7 +131,7 @@ func BenchmarkRetrieveClanSummary(b *testing.B) {
 	}
 
 	gameID := uuid.NewV4().String()
-	_, clan, _, _, _, err := models.GetClanWithMemberships(
+	_, clan, _, _, _, err := fixtures.GetClanWithMemberships(
 		db, 50, 50, 50, 50, gameID, uuid.NewV4().String(),
 	)
 
@@ -139,12 +152,19 @@ func BenchmarkRetrieveClanSummary(b *testing.B) {
 }
 
 func BenchmarkRetrieveClansSummary(b *testing.B) {
+	fixtures.ConfigureAndStartGoWorkers()
+
 	db, err := models.GetPerfDB()
 	if err != nil {
 		panic(err.Error())
 	}
 
-	game, owner, err := getGameAndPlayer(db)
+	mongoDB, err := khanTesting.GetTestMongo()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	game, owner, err := getGameAndPlayer(db, mongoDB)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -172,12 +192,19 @@ func BenchmarkRetrieveClansSummary(b *testing.B) {
 }
 
 func BenchmarkSearchClan(b *testing.B) {
+	fixtures.ConfigureAndStartGoWorkers()
+
 	db, err := models.GetPerfDB()
 	if err != nil {
 		panic(err.Error())
 	}
 
-	game, owner, err := getGameAndPlayer(db)
+	mongoDB, err := khanTesting.GetTestMongo()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	game, owner, err := getGameAndPlayer(db, mongoDB)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -189,13 +216,8 @@ func BenchmarkSearchClan(b *testing.B) {
 
 	b.ResetTimer()
 
-	err = khanTesting.CreateClanNameTextIndexInMongo(getTestMongo, game.Name)
-	if err != nil {
-		panic(err.Error())
-	}
-
 	for i := 0; i < b.N; i++ {
-		route := getRoute(fmt.Sprintf("/games/%s/clans/search?term=%s", game.Name, clans[0].PublicID))
+		route := getRoute(fmt.Sprintf("/games/%s/clans/search?term=%s", game.PublicID, clans[0].PublicID))
 		res, err := get(route)
 		validateResp(res, err)
 		res.Body.Close()
@@ -205,12 +227,19 @@ func BenchmarkSearchClan(b *testing.B) {
 }
 
 func BenchmarkListClans(b *testing.B) {
+	fixtures.ConfigureAndStartGoWorkers()
+
 	db, err := models.GetPerfDB()
 	if err != nil {
 		panic(err.Error())
 	}
 
-	game, owner, err := getGameAndPlayer(db)
+	mongoDB, err := khanTesting.GetTestMongo()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	game, owner, err := getGameAndPlayer(db, mongoDB)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -233,12 +262,19 @@ func BenchmarkListClans(b *testing.B) {
 }
 
 func BenchmarkLeaveClan(b *testing.B) {
+	fixtures.ConfigureAndStartGoWorkers()
+
 	db, err := models.GetPerfDB()
 	if err != nil {
 		panic(err.Error())
 	}
 
-	game, owner, err := getGameAndPlayer(db)
+	mongoDB, err := khanTesting.GetTestMongo()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	game, owner, err := getGameAndPlayer(db, mongoDB)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -268,7 +304,7 @@ func BenchmarkTransferOwnership(b *testing.B) {
 		panic(err.Error())
 	}
 
-	game, clan, owner, members, _, err := models.GetClanWithMemberships(
+	game, clan, owner, members, _, err := fixtures.GetClanWithMemberships(
 		db, 20, 0, 0, 0, "", "",
 	)
 	if err != nil {

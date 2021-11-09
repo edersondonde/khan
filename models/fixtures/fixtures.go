@@ -5,22 +5,30 @@
 // http://www.opensource.org/licenses/mit-license
 // Copyright © 2016 Top Free Games <backend@tfgco.com>
 
-package models
+package fixtures
 
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Pallinder/go-randomdata"
 	"github.com/bluele/factory-go/factory"
+	"github.com/jrallison/go-workers"
 	uuid "github.com/satori/go.uuid"
+	"github.com/spf13/viper"
+	"github.com/topfreegames/extensions/v9/mongo/interfaces"
+	"github.com/topfreegames/khan/models"
+	"github.com/topfreegames/khan/mongo"
+	"github.com/topfreegames/khan/queues"
+	kt "github.com/topfreegames/khan/testing"
 	"github.com/topfreegames/khan/util"
 )
 
 // GameFactory is responsible for constructing test game instances
 var GameFactory = factory.NewFactory(
-	&Game{
+	&models.Game{
 		MinLevelToAcceptApplication:   2,
 		MinLevelToCreateInvitation:    2,
 		MinLevelToRemoveMember:        2,
@@ -47,17 +55,17 @@ var GameFactory = factory.NewFactory(
 
 // HookFactory is responsible for constructing event hook instances
 var HookFactory = factory.NewFactory(
-	&Hook{EventType: GameUpdatedHook, URL: "http://test/game-created"},
+	&models.Hook{EventType: models.GameUpdatedHook, URL: "http://test/game-created"},
 )
 
 // CreateHookFactory is responsible for creating a test hook instance with the associated game
-func CreateHookFactory(db DB, gameID string, eventType int, url string) (*Hook, error) {
+func CreateHookFactory(db models.DB, gameID string, eventType int, url string) (*models.Hook, error) {
 	if gameID == "" {
 		gameID = uuid.NewV4().String()
 	}
 	game := GameFactory.MustCreateWithOption(map[string]interface{}{
 		"PublicID": gameID,
-	}).(*Game)
+	}).(*models.Game)
 	err := db.Insert(game)
 	if err != nil {
 		return nil, err
@@ -68,7 +76,7 @@ func CreateHookFactory(db DB, gameID string, eventType int, url string) (*Hook, 
 		"PublicID":  uuid.NewV4().String(),
 		"EventType": eventType,
 		"URL":       url,
-	}).(*Hook)
+	}).(*models.Hook)
 	err = db.Insert(hook)
 	if err != nil {
 		return nil, err
@@ -77,14 +85,14 @@ func CreateHookFactory(db DB, gameID string, eventType int, url string) (*Hook, 
 }
 
 // GetHooksForRoutes gets hooks for all the specified routes
-func GetHooksForRoutes(db DB, routes []string, eventType int) ([]*Hook, error) {
-	var hooks []*Hook
+func GetHooksForRoutes(db models.DB, routes []string, eventType int) ([]*models.Hook, error) {
+	var hooks []*models.Hook
 
 	gameID := uuid.NewV4().String()
 
 	game := GameFactory.MustCreateWithOption(map[string]interface{}{
 		"PublicID": gameID,
-	}).(*Game)
+	}).(*models.Game)
 	err := db.Insert(game)
 	if err != nil {
 		return nil, err
@@ -96,7 +104,7 @@ func GetHooksForRoutes(db DB, routes []string, eventType int) ([]*Hook, error) {
 			"PublicID":  uuid.NewV4().String(),
 			"EventType": eventType,
 			"URL":       route,
-		}).(*Hook)
+		}).(*models.Hook)
 		err := db.Insert(hook)
 		if err != nil {
 			return nil, err
@@ -117,19 +125,26 @@ func configureFactory(fct *factory.Factory) *factory.Factory {
 	})
 }
 
+var testKey []byte = []byte("00000000000000000000000000000000")
+
+//GetEncryptionKey returns the models test encryptionKey
+func GetEncryptionKey() []byte {
+	return testKey
+}
+
 // PlayerFactory is responsible for constructing test player instances
 var PlayerFactory = configureFactory(factory.NewFactory(
-	&Player{},
+	&models.Player{},
 ))
 
 // ClanFactory is responsible for constructing test clan instances
 var ClanFactory = configureFactory(factory.NewFactory(
-	&Clan{},
+	&models.Clan{},
 ))
 
 // CreatePlayerFactory is responsible for creating a test player instance with the associated game
-func CreatePlayerFactory(db DB, gameID string, skipCreateGame ...bool) (*Game, *Player, error) {
-	var game *Game
+func CreatePlayerFactory(db models.DB, gameID string, skipCreateGame ...bool) (*models.Game, *models.Player, error) {
+	var game *models.Game
 
 	if skipCreateGame == nil || len(skipCreateGame) != 1 || !skipCreateGame[0] {
 		if gameID == "" {
@@ -137,14 +152,14 @@ func CreatePlayerFactory(db DB, gameID string, skipCreateGame ...bool) (*Game, *
 		}
 		game = GameFactory.MustCreateWithOption(map[string]interface{}{
 			"PublicID": gameID,
-		}).(*Game)
+		}).(*models.Game)
 		err := db.Insert(game)
 		if err != nil {
 			return nil, nil, err
 		}
 	} else {
 		var err error
-		game, err = GetGameByPublicID(db, gameID)
+		game, err = models.GetGameByPublicID(db, gameID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -152,7 +167,7 @@ func CreatePlayerFactory(db DB, gameID string, skipCreateGame ...bool) (*Game, *
 
 	player := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID": gameID,
-	}).(*Player)
+	}).(*models.Player)
 	err := db.Insert(player)
 	if err != nil {
 		return nil, nil, err
@@ -162,11 +177,11 @@ func CreatePlayerFactory(db DB, gameID string, skipCreateGame ...bool) (*Game, *
 
 // MembershipFactory is responsible for constructing test membership instances
 var MembershipFactory = factory.NewFactory(
-	&Membership{},
+	&models.Membership{},
 ).SeqInt("GameID", func(n int) (interface{}, error) {
 	return fmt.Sprintf("game-%d", n), nil
 }).Attr("ApproverID", func(args factory.Args) (interface{}, error) {
-	membership := args.Instance().(*Membership)
+	membership := args.Instance().(*models.Membership)
 	approverID := int64(0)
 	valid := false
 	if membership.Approved {
@@ -175,7 +190,7 @@ var MembershipFactory = factory.NewFactory(
 	}
 	return sql.NullInt64{Int64: int64(approverID), Valid: valid}, nil
 }).Attr("DenierID", func(args factory.Args) (interface{}, error) {
-	membership := args.Instance().(*Membership)
+	membership := args.Instance().(*models.Membership)
 	denierID := int64(0)
 	valid := false
 	if membership.Denied {
@@ -187,8 +202,8 @@ var MembershipFactory = factory.NewFactory(
 
 // GetClanWithMemberships returns a clan filled with the number of memberships specified
 func GetClanWithMemberships(
-	db DB, approvedMemberships, deniedMemberships, bannedMemberships, pendingMemberships int, gameID string, clanPublicID string, options ...bool) (*Game, *Clan, *Player, []*Player, []*Membership, error) {
-	var game *Game
+	db models.DB, approvedMemberships, deniedMemberships, bannedMemberships, pendingMemberships int, gameID string, clanPublicID string, options ...bool) (*models.Game, *models.Clan, *models.Player, []*models.Player, []*models.Membership, error) {
+	var game *models.Game
 
 	pendingsAreInvites := true
 	if options != nil && len(options) > 1 {
@@ -201,14 +216,14 @@ func GetClanWithMemberships(
 		}
 		game = GameFactory.MustCreateWithOption(map[string]interface{}{
 			"PublicID": gameID,
-		}).(*Game)
+		}).(*models.Game)
 		err := db.Insert(game)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 	} else {
 		var err error
-		game, err = GetGameByPublicID(db, gameID)
+		game, err = models.GetGameByPublicID(db, gameID)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
@@ -220,7 +235,7 @@ func GetClanWithMemberships(
 	owner := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":         gameID,
 		"OwnershipCount": 1,
-	}).(*Player)
+	}).(*models.Player)
 	err := db.Insert(owner)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -233,32 +248,32 @@ func GetClanWithMemberships(
 		"Metadata":         map[string]interface{}{"x": "a"},
 		"MembershipCount":  approvedMemberships + 1,
 		"AllowApplication": true,
-	}).(*Clan)
+	}).(*models.Clan)
 	err = db.Insert(clan)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
 	testData := []map[string]interface{}{
-		map[string]interface{}{
+		{
 			"approved": true,
 			"denied":   false,
 			"banned":   false,
 			"count":    approvedMemberships,
 		},
-		map[string]interface{}{
+		{
 			"approved": false,
 			"denied":   true,
 			"banned":   false,
 			"count":    deniedMemberships,
 		},
-		map[string]interface{}{
+		{
 			"approved": false,
 			"denied":   false,
 			"banned":   true,
 			"count":    bannedMemberships,
 		},
-		map[string]interface{}{
+		{
 			"approved": false,
 			"denied":   false,
 			"banned":   false,
@@ -266,8 +281,8 @@ func GetClanWithMemberships(
 		},
 	}
 
-	var players []*Player
-	var memberships []*Membership
+	var players []*models.Player
+	var memberships []*models.Membership
 
 	for _, data := range testData {
 		approved := data["approved"].(bool)
@@ -283,7 +298,7 @@ func GetClanWithMemberships(
 			player := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 				"GameID":          owner.GameID,
 				"MembershipCount": membershipCount,
-			}).(*Player)
+			}).(*models.Player)
 			err = db.Insert(player)
 			if err != nil {
 				return nil, nil, nil, nil, nil, err
@@ -308,7 +323,7 @@ func GetClanWithMemberships(
 				"Denied":      denied,
 				"Banned":      banned,
 				"Message":     message,
-			}).(*Membership)
+			}).(*models.Membership)
 
 			if approved {
 				approverID := player.ID
@@ -351,14 +366,14 @@ func GetClanWithMemberships(
 }
 
 // GetClanReachedMaxMemberships returns a clan with one approved membership, one unapproved membership and game MaxMembers=1
-func GetClanReachedMaxMemberships(db DB) (*Game, *Clan, *Player, []*Player, []*Membership, error) {
+func GetClanReachedMaxMemberships(db models.DB) (*models.Game, *models.Clan, *models.Player, []*models.Player, []*models.Membership, error) {
 	gameID := uuid.NewV4().String()
 	clanPublicID := uuid.NewV4().String()
 
 	game := GameFactory.MustCreateWithOption(map[string]interface{}{
 		"PublicID":   gameID,
 		"MaxMembers": 1,
-	}).(*Game)
+	}).(*models.Game)
 	err := db.Insert(game)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -367,13 +382,13 @@ func GetClanReachedMaxMemberships(db DB) (*Game, *Clan, *Player, []*Player, []*M
 	owner := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":         gameID,
 		"OwnershipCount": 1,
-	}).(*Player)
+	}).(*models.Player)
 	err = db.Insert(owner)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
-	var players []*Player
+	var players []*models.Player
 
 	for i := 0; i < 2; i++ {
 		membershipCount := 0
@@ -383,7 +398,7 @@ func GetClanReachedMaxMemberships(db DB) (*Game, *Clan, *Player, []*Player, []*M
 		player := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 			"GameID":          owner.GameID,
 			"MembershipCount": membershipCount,
-		}).(*Player)
+		}).(*models.Player)
 		err = db.Insert(player)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
@@ -397,13 +412,13 @@ func GetClanReachedMaxMemberships(db DB) (*Game, *Clan, *Player, []*Player, []*M
 		"OwnerID":         owner.ID,
 		"Metadata":        map[string]interface{}{"x": "a"},
 		"MembershipCount": 2,
-	}).(*Clan)
+	}).(*models.Clan)
 	err = db.Insert(clan)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
-	var memberships []*Membership
+	var memberships []*models.Membership
 
 	membership := MembershipFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":      owner.GameID,
@@ -415,7 +430,7 @@ func GetClanReachedMaxMemberships(db DB) (*Game, *Clan, *Player, []*Player, []*M
 		"Level":       "Member",
 		"ApproverID":  sql.NullInt64{Int64: int64(players[0].ID), Valid: true},
 		"ApprovedAt":  util.NowMilli(),
-	}).(*Membership)
+	}).(*models.Membership)
 	err = db.Insert(membership)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -430,7 +445,7 @@ func GetClanReachedMaxMemberships(db DB) (*Game, *Clan, *Player, []*Player, []*M
 		"Metadata":    map[string]interface{}{"x": "a"},
 		"Approved":    false,
 		"Level":       "Member",
-	}).(*Membership)
+	}).(*models.Membership)
 	err = db.Insert(membership)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -441,13 +456,13 @@ func GetClanReachedMaxMemberships(db DB) (*Game, *Clan, *Player, []*Player, []*M
 }
 
 // GetTestClanWithRandomPublicIDAndName returns a clan with random UUID v4 publicID and name for tests
-func GetTestClanWithRandomPublicIDAndName(db DB, gameID string, ownerID int64) (*Clan, error) {
+func GetTestClanWithRandomPublicIDAndName(db models.DB, gameID string, ownerID int64) (*models.Clan, error) {
 	clan := ClanFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":   gameID,
 		"PublicID": uuid.NewV4().String(),
 		"Name":     uuid.NewV4().String(),
 		"OwnerID":  ownerID,
-	}).(*Clan)
+	}).(*models.Clan)
 	err := db.Insert(clan)
 	if err != nil {
 		return nil, err
@@ -460,13 +475,13 @@ func GetTestClanWithRandomPublicIDAndName(db DB, gameID string, ownerID int64) (
 }
 
 // GetTestClanWithName returns a clan with name for tests
-func GetTestClanWithName(db DB, gameID, name string, ownerID int64) (*Clan, error) {
+func GetTestClanWithName(db models.DB, gameID, name string, ownerID int64) (*models.Clan, error) {
 	clan := ClanFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":   gameID,
 		"PublicID": uuid.NewV4().String(),
 		"Name":     name,
 		"OwnerID":  ownerID,
-	}).(*Clan)
+	}).(*models.Clan)
 	err := db.Insert(clan)
 	if err != nil {
 		return nil, err
@@ -478,14 +493,25 @@ func GetTestClanWithName(db DB, gameID, name string, ownerID int64) (*Clan, erro
 	return clan, nil
 }
 
-// GetTestClans returns a list of clans for tests
-func GetTestClans(db DB, gameID string, publicIDTemplate string, numberOfClans int) (*Player, []*Clan, error) {
+// AfterClanCreationHook permits a caller to execute code after a test clan is created.
+type AfterClanCreationHook func(player *models.Player, clan *models.Clan) error
+
+// EnqueueClanForMongoUpdate is a possible value for the type AfterClanCreationHook. This is will enqueue
+// the clan into Redis for the mongo worker to insert/update it on MongoDB
+func EnqueueClanForMongoUpdate(player *models.Player, clan *models.Clan) error {
+	return clan.UpdateClanIntoMongoDB()
+}
+
+// CreateTestClans returns a list of clans for tests
+func CreateTestClans(
+	db models.DB, mongoDB interfaces.MongoDB, gameID string, publicIDTemplate string, numberOfClans int, afterCreationHook AfterClanCreationHook,
+) (*models.Player, []*models.Clan, error) {
 	if gameID == "" {
 		gameID = uuid.NewV4().String()
 	}
 	game := GameFactory.MustCreateWithOption(map[string]interface{}{
 		"PublicID": gameID,
-	}).(*Game)
+	}).(*models.Game)
 	err := db.Insert(game)
 	if err != nil {
 		return nil, nil, err
@@ -494,7 +520,7 @@ func GetTestClans(db DB, gameID string, publicIDTemplate string, numberOfClans i
 	player := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":         gameID,
 		"OwnershipCount": numberOfClans,
-	}).(*Player)
+	}).(*models.Player)
 	err = db.Insert(player)
 	if err != nil {
 		return nil, nil, err
@@ -504,19 +530,19 @@ func GetTestClans(db DB, gameID string, publicIDTemplate string, numberOfClans i
 		publicIDTemplate = uuid.NewV4().String()
 	}
 
-	var clans []*Clan
+	var clans []*models.Clan
 	for i := 0; i < numberOfClans; i++ {
 		clan := ClanFactory.MustCreateWithOption(map[string]interface{}{
 			"GameID":   player.GameID,
 			"PublicID": fmt.Sprintf("%s-%d", publicIDTemplate, i),
 			"Name":     fmt.Sprintf("💩clán-%s-%d", publicIDTemplate, i),
 			"OwnerID":  player.ID,
-		}).(*Clan)
+		}).(*models.Clan)
 		err = db.Insert(clan)
 		if err != nil {
 			return nil, nil, err
 		}
-		err = clan.UpdateClanIntoMongoDB()
+		err = afterCreationHook(player, clan)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -524,20 +550,25 @@ func GetTestClans(db DB, gameID string, publicIDTemplate string, numberOfClans i
 		clans = append(clans, clan)
 	}
 
+	err = mongoDB.Run(mongo.GetClanNameTextIndexCommand(gameID, false), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	return player, clans, nil
 }
 
 // GetTestHooks return a fixed number of hooks for each event available
-func GetTestHooks(db DB, gameID string, numberOfHooks int) ([]*Hook, error) {
+func GetTestHooks(db models.DB, gameID string, numberOfHooks int) ([]*models.Hook, error) {
 	game := GameFactory.MustCreateWithOption(map[string]interface{}{
 		"PublicID": gameID,
-	}).(*Game)
+	}).(*models.Game)
 	err := db.Insert(game)
 	if err != nil {
 		return nil, err
 	}
 
-	var hooks []*Hook
+	var hooks []*models.Hook
 	for i := 0; i < 2; i++ {
 		for j := 0; j < numberOfHooks; j++ {
 			hook := HookFactory.MustCreateWithOption(map[string]interface{}{
@@ -545,7 +576,7 @@ func GetTestHooks(db DB, gameID string, numberOfHooks int) ([]*Hook, error) {
 				"PublicID":  uuid.NewV4().String(),
 				"EventType": i,
 				"URL":       fmt.Sprintf("http://test/event-%d-%d", i, j),
-			}).(*Hook)
+			}).(*models.Hook)
 			err = db.Insert(hook)
 			if err != nil {
 				return nil, err
@@ -557,45 +588,45 @@ func GetTestHooks(db DB, gameID string, numberOfHooks int) ([]*Hook, error) {
 	return hooks, nil
 }
 
-//GetTestPlayerWithMemberships returns a player with approved, rejected and banned memberships
-func GetTestPlayerWithMemberships(db DB, gameID string, approvedMemberships, rejectedMemberships, bannedMemberships, pendingMemberships int) (*Player, error) {
+//GetTestPlayerWithMemberships returns the clan owner, a player with approved, rejected, and banned memberships
+func GetTestPlayerWithMemberships(db models.DB, gameID string, approvedMemberships, rejectedMemberships, bannedMemberships, pendingMemberships int) (*models.Player, *models.Player, error) {
 	if gameID == "" {
 		gameID = uuid.NewV4().String()
 	}
 	game := GameFactory.MustCreateWithOption(map[string]interface{}{
 		"PublicID": gameID,
-	}).(*Game)
+	}).(*models.Game)
 	err := db.Insert(game)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	owner := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":         gameID,
 		"OwnershipCount": 1,
-	}).(*Player)
+	}).(*models.Player)
 	err = db.Insert(owner)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	player := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":          owner.GameID,
 		"MembershipCount": approvedMemberships,
-	}).(*Player)
+	}).(*models.Player)
 	err = db.Insert(player)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	createClan := func() (*Clan, error) {
+	createClan := func() (*models.Clan, error) {
 		clan := ClanFactory.MustCreateWithOption(map[string]interface{}{
 			"GameID":          owner.GameID,
 			"PublicID":        uuid.NewV4().String(),
 			"OwnerID":         owner.ID,
 			"Metadata":        map[string]interface{}{"x": "a"},
 			"MembershipCount": approvedMemberships + 1,
-		}).(*Clan)
+		}).(*models.Clan)
 		err = db.Insert(clan)
 		if err != nil {
 			return nil, err
@@ -604,7 +635,7 @@ func GetTestPlayerWithMemberships(db DB, gameID string, approvedMemberships, rej
 		return clan, nil
 	}
 
-	createMembership := func(approved, denied, banned bool) (*Membership, error) {
+	createMembership := func(approved, denied, banned bool) (*models.Membership, error) {
 		clan, err := createClan()
 		if err != nil {
 			return nil, err
@@ -632,7 +663,7 @@ func GetTestPlayerWithMemberships(db DB, gameID string, approvedMemberships, rej
 			payload["DeniedAt"] = util.NowMilli()
 		}
 
-		membership := MembershipFactory.MustCreateWithOption(payload).(*Membership)
+		membership := MembershipFactory.MustCreateWithOption(payload).(*models.Membership)
 
 		err = db.Insert(membership)
 		if err != nil {
@@ -645,33 +676,33 @@ func GetTestPlayerWithMemberships(db DB, gameID string, approvedMemberships, rej
 	for i := 0; i < approvedMemberships; i++ {
 		_, err := createMembership(true, false, false)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	for i := 0; i < rejectedMemberships; i++ {
 		_, err := createMembership(false, true, false)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	for i := 0; i < bannedMemberships; i++ {
 		_, err := createMembership(false, false, true)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	for i := 0; i < pendingMemberships; i++ {
 		_, err := createMembership(false, false, false)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	return player, nil
+	return owner, player, nil
 }
 
 //GetTestClanWithStaleData returns a player with approved, rejected and banned memberships
-func GetTestClanWithStaleData(db DB, staleApplications, staleInvites, staleDenies, staleDeletes int) (string, error) {
+func GetTestClanWithStaleData(db models.DB, staleApplications, staleInvites, staleDenies, staleDeletes int) (string, error) {
 	gameID := uuid.NewV4().String()
 	game := GameFactory.MustCreateWithOption(map[string]interface{}{
 		"PublicID": gameID,
@@ -681,7 +712,7 @@ func GetTestClanWithStaleData(db DB, staleApplications, staleInvites, staleDenie
 			"deniedMembershipsExpiration":   3600,
 			"deletedMembershipsExpiration":  3600,
 		},
-	}).(*Game)
+	}).(*models.Game)
 	err := db.Insert(game)
 	if err != nil {
 		return "", err
@@ -690,7 +721,7 @@ func GetTestClanWithStaleData(db DB, staleApplications, staleInvites, staleDenie
 	owner := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 		"GameID":         gameID,
 		"OwnershipCount": 1,
-	}).(*Player)
+	}).(*models.Player)
 	err = db.Insert(owner)
 	if err != nil {
 		return "", err
@@ -701,16 +732,16 @@ func GetTestClanWithStaleData(db DB, staleApplications, staleInvites, staleDenie
 		"PublicID": uuid.NewV4().String(),
 		"OwnerID":  owner.ID,
 		"Metadata": map[string]interface{}{"x": "a"},
-	}).(*Clan)
+	}).(*models.Clan)
 	err = db.Insert(clan)
 	if err != nil {
 		return "", err
 	}
 
-	createMembership := func(createdAt int64, application bool, denied bool, deleted bool) (*Player, *Membership, error) {
+	createMembership := func(createdAt int64, application bool, denied bool, deleted bool) (*models.Player, *models.Membership, error) {
 		player := PlayerFactory.MustCreateWithOption(map[string]interface{}{
 			"GameID": gameID,
-		}).(*Player)
+		}).(*models.Player)
 		err = db.Insert(player)
 		if err != nil {
 			return nil, nil, err
@@ -741,7 +772,7 @@ func GetTestClanWithStaleData(db DB, staleApplications, staleInvites, staleDenie
 			payload["DeletedAt"] = util.NowMilli()
 		}
 
-		membership := MembershipFactory.MustCreateWithOption(payload).(*Membership)
+		membership := MembershipFactory.MustCreateWithOption(payload).(*models.Membership)
 		err = db.Insert(membership)
 		if err != nil {
 			return nil, nil, err
@@ -787,4 +818,50 @@ func GetTestClanWithStaleData(db DB, staleApplications, staleInvites, staleDenie
 	}
 
 	return gameID, nil
+}
+
+// ConfigureAndStartGoWorkers starts the mongo workers
+func ConfigureAndStartGoWorkers() (*models.MongoWorker, error) {
+	config := viper.New()
+	config.SetConfigType("yaml")
+	config.SetConfigFile("../config/test.yaml")
+	err := config.ReadInConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	redisHost := config.GetString("redis.host")
+	redisPort := config.GetInt("redis.port")
+	redisDatabase := config.GetInt("redis.database")
+	redisPool := config.GetInt("redis.pool")
+	workerCount := config.GetInt("webhooks.workers")
+	if redisPool == 0 {
+		redisPool = 30
+	}
+
+	if workerCount == 0 {
+		workerCount = 5
+	}
+
+	opts := map[string]string{
+		// location of redis instance
+		"server": fmt.Sprintf("%s:%d", redisHost, redisPort),
+		// instance of the database
+		"database": strconv.Itoa(redisDatabase),
+		// number of connections to keep open with redis
+		"pool": strconv.Itoa(redisPool),
+		// unique process id
+		"process": uuid.NewV4().String(),
+	}
+	redisPass := config.GetString("redis.password")
+	if redisPass != "" {
+		opts["password"] = redisPass
+	}
+	workers.Configure(opts)
+
+	logger := kt.NewMockLogger()
+	mongoWorker := models.NewMongoWorker(logger, config)
+	workers.Process(queues.KhanMongoQueue, mongoWorker.PerformUpdateMongo, workerCount)
+	workers.Start()
+	return mongoWorker, nil
 }

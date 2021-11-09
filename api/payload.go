@@ -75,12 +75,12 @@ func (v *Validation) Errors() []string {
 	return v.errors
 }
 
-func logPayloadErrors(l zap.Logger, errors []string) {
+func logPayloadErrors(logger zap.Logger, errors []string) {
 	var fields []zap.Field
 	for _, err := range errors {
 		fields = append(fields, zap.String("validationError", err))
 	}
-	log.W(l, "Payload is not valid", func(cm log.CM) {
+	log.W(logger, "Payload is not valid", func(cm log.CM) {
 		cm.Write(fields...)
 	})
 }
@@ -186,17 +186,22 @@ type UpdateGamePayload struct {
 func (p *UpdateGamePayload) Validate() []string {
 	v := NewValidation()
 
-	v.validateRequiredString("name", p.Name)
+	var minMembershipLevel int
+
 	v.validateRequiredMap("membershipLevels", p.MembershipLevels)
+
+	if len(p.MembershipLevels) > 0 {
+		sortedLevels := util.SortLevels(p.MembershipLevels)
+		minMembershipLevel = sortedLevels[0].Value
+	}
+
+	v.validateRequiredString("name", p.Name)
 	v.validateRequired("metadata", p.Metadata)
 	v.validateRequiredInt("minLevelOffsetToRemoveMember", p.MinLevelOffsetToRemoveMember)
 	v.validateRequiredInt("minLevelOffsetToPromoteMember", p.MinLevelOffsetToPromoteMember)
 	v.validateRequiredInt("minLevelOffsetToDemoteMember", p.MinLevelOffsetToDemoteMember)
 	v.validateRequiredInt("maxMembers", p.MaxMembers)
 	v.validateRequiredInt("maxClansPerPlayer", p.MaxClansPerPlayer)
-
-	sortedLevels := util.SortLevels(p.MembershipLevels)
-	minMembershipLevel := sortedLevels[0].Value
 
 	v.validateCustom("minLevelToAcceptApplication", func() []string {
 		if p.MinLevelToAcceptApplication < minMembershipLevel {
@@ -241,11 +246,17 @@ type CreateGamePayload struct {
 //Validate the create game payload
 func (p *CreateGamePayload) Validate() []string {
 	v := NewValidation()
-	sortedLevels := util.SortLevels(p.MembershipLevels)
-	minMembershipLevel := sortedLevels[0].Value
+
+	var minMembershipLevel int
+
+	v.validateRequiredMap("membershipLevels", p.MembershipLevels)
+
+	if len(p.MembershipLevels) > 0 {
+		sortedLevels := util.SortLevels(p.MembershipLevels)
+		minMembershipLevel = sortedLevels[0].Value
+	}
 
 	v.validateRequiredString("name", p.Name)
-	v.validateRequiredMap("membershipLevels", p.MembershipLevels)
 	v.validateRequired("metadata", p.Metadata)
 	v.validateRequiredInt("minLevelOffsetToRemoveMember", p.MinLevelOffsetToRemoveMember)
 	v.validateRequiredInt("minLevelOffsetToPromoteMember", p.MinLevelOffsetToPromoteMember)
