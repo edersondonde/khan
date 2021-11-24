@@ -15,6 +15,7 @@ import (
 
 	"github.com/labstack/echo"
 	"github.com/topfreegames/extensions/v9/gorp/interfaces"
+	"github.com/topfreegames/khan/lib"
 	"github.com/topfreegames/khan/log"
 	"github.com/topfreegames/khan/models"
 	"github.com/uber-go/zap"
@@ -629,7 +630,7 @@ func SearchClansHandler(app *App) func(c echo.Context) error {
 		if useRegexSearchStr != "" {
 			useRegexSearch, err := strconv.ParseBool(useRegexSearchStr)
 			if err != nil {
-				log.W(l, "Clan search failed due to invalid 'useRegexSearch' param", func(cm log.CM) {
+				log.W(logger, "Clan search failed due to invalid 'useRegexSearch' param", func(cm log.CM) {
 					cm.Write(zap.Error(err))
 				})
 				queryParamErr := &models.InvalidArgumentError{

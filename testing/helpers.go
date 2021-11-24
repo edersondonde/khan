@@ -8,18 +8,16 @@ import (
 	"github.com/topfreegames/khan/util"
 
 	gocache "github.com/patrickmn/go-cache"
+	"github.com/topfreegames/extensions/v9/mongo/interfaces"
 	"github.com/topfreegames/khan/models"
+	"github.com/topfreegames/khan/mongo"
 )
 
 var testDB models.DB
 
 // CreateClanNameRegularIndexInMongo creates the regular index for clan search in mongo
-func CreateClanNameRegularIndexInMongo(getTestMongo func() (interfaces.MongoDB, error), gameID string) error {
-	db, err := getTestMongo()
-	if err != nil {
-		return err
-	}
-	return db.Run(mongo.GetClanNameRegularIndexCommand(gameID, false), nil)
+func CreateClanNameRegularIndexInMongo(mongoDB interfaces.MongoDB, gameID string) error {
+	return mongoDB.Run(mongo.GetClanNameRegularIndexCommand(gameID, false), nil)
 }
 
 // GetTestDB returns a connection to the test database.

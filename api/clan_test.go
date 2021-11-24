@@ -1149,18 +1149,19 @@ var _ = Describe("Clan API Handler", func() {
 		})
 
 		It("Should search for a clan with punctuation symbols in name", func() {
-			gameID := uuid.NewV4().String()
-			player, expectedClans, err := models.GetTestClans(
-				testDb, gameID, "$#+-", 10,
-			)
+			mongoDB, err := testing.GetTestMongo()
 			Expect(err).NotTo(HaveOccurred())
 
-			err = testing.CreateClanNameRegularIndexInMongo(GetTestMongo, gameID)
+			gameID := uuid.NewV4().String()
+			player, expectedClans, err := fixtures.CreateTestClans(testDb, mongoDB, gameID, "$#+-",10, fixtures.EnqueueClanForMongoUpdate)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = testing.CreateClanNameRegularIndexInMongo(mongoDB, gameID)
 			Expect(err).NotTo(HaveOccurred())
 
 			escapedTerm := url.QueryEscape("💩clán-$")
 			url := fmt.Sprintf("clans/search?term=%s&useRegexSearch=true", escapedTerm)
-			status, body := Get(a, GetGameRoute(player.GameID, url))
+			status, body := Get(app, GetGameRoute(player.GameID, url))
 			Expect(status).To(Equal(http.StatusOK))
 			var result map[string]interface{}
 			json.Unmarshal([]byte(body), &result)
