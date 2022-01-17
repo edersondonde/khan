@@ -1,6 +1,8 @@
 package testing
 
 import (
+	"github.com/topfreegames/extensions/v9/mongo/interfaces"
+	"github.com/topfreegames/khan/mongo"
 	"time"
 
 	. "github.com/onsi/gomega"

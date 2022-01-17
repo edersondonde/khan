@@ -1225,31 +1225,31 @@ var _ = Describe("Clan Model", func() {
 			})
 
 			It("Should return clan by search term", func() {
-				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, "SEARCH", 10, lib.SearchMethodText) }).Should(HaveLen(10))
+				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, "SEARCH", 0, 10, lib.SearchMethodText) }).Should(HaveLen(10))
 			})
 
 			It("Should return clan by unicode search term", func() {
-				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, "💩clán", 10, lib.SearchMethodText) }).Should(HaveLen(10))
+				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, "💩clán", 0, 10, lib.SearchMethodText) }).Should(HaveLen(10))
 			})
 
 			It("Should return clan by full public ID as search term", func() {
 				searchClanID := realClans[0].PublicID
-				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, searchClanID, 10, lib.SearchMethodText) }).Should(HaveLen(1))
+				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, searchClanID, 0, 10, lib.SearchMethodText) }).Should(HaveLen(1))
 			})
 
 			It("Should return clan by short public ID as search term", func() {
 				dbClan, err := fixtures.GetTestClanWithRandomPublicIDAndName(testDb, player.GameID, player.ID)
 				Expect(err).NotTo(HaveOccurred())
 				searchClanID := dbClan.PublicID[:8]
-				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, searchClanID, 10, lib.SearchMethodText) }).Should(HaveLen(1))
+				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, searchClanID, 0, 10, lib.SearchMethodText) }).Should(HaveLen(1))
 			})
 
 			It("Should return empty list if search term is not found", func() {
-				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, "qwfjur", 10, lib.SearchMethodText) }).Should(HaveLen(0))
+				Eventually(func() ([]Clan, error) { return SearchClan(testDb, testMongo, player.GameID, "qwfjur", 0, 10, lib.SearchMethodText) }).Should(HaveLen(0))
 			})
 
 			It("Should return invalid response if empty term", func() {
-				_, err := SearchClan(testDb, testMongo, "some-game-id", "", 10, lib.SearchMethodText)
+				_, err := SearchClan(testDb, testMongo, "some-game-id", "", 0, 10, lib.SearchMethodText)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal("A search term was not provided to find a clan."))
 			})
@@ -1258,7 +1258,7 @@ var _ = Describe("Clan Model", func() {
 				dbClan, err := fixtures.GetTestClanWithName(testDb, player.GameID, "The Largest Clan Name For Prefix Test", player.ID)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(func() (string, error) {
-					clans, err := SearchClan(testDb, testMongo, player.GameID, "prefi large", 10, lib.SearchMethodText)
+					clans, err := SearchClan(testDb, testMongo, player.GameID, "prefi large", 0, 10, lib.SearchMethodText)
 					if err != nil {
 						return "", err
 					}
@@ -1275,7 +1275,7 @@ var _ = Describe("Clan Model", func() {
 				dbClan, err := fixtures.GetTestClanWithName(testDb, player.GameID, "@$!?&&¨", player.ID)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(func() (string, error) {
-					clans, err := SearchClan(testDb, testMongo, player.GameID, "@", 10, lib.SearchMethodRegex)
+					clans, err := SearchClan(testDb, testMongo, player.GameID, "@", 0, 10, lib.SearchMethodRegex)
 					if err != nil {
 						return "", err
 					}
